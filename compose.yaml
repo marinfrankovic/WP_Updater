@@ -1,0 +1,44 @@
+name: wp-updater
+
+services:
+  wp-updater:
+    # Build the image locally (multi-stage: compiles the SPA, then the Python
+    # runtime). To use the published image instead, comment out `build` and set
+    #   image: mfrankovic/wp-updater:latest
+    build: .
+    image: wp-updater:local
+    container_name: wp-updater
+    hostname: wp-updater
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      WPUPDATER_PORT: 8090
+      WPUPDATER_SECRET_KEY: ${WPUPDATER_SECRET_KEY:-change-me}
+
+      # Optional HTTP basic auth for the dashboard (leave blank to disable).
+      WPUPDATER_USER: ${WPUPDATER_USER:-}
+      WPUPDATER_PASSWORD: ${WPUPDATER_PASSWORD:-}
+
+      # Connector HTTP behaviour
+      WPUPDATER_VERIFY_TLS: ${WPUPDATER_VERIFY_TLS:-true}
+      WPUPDATER_REQUEST_TIMEOUT: ${WPUPDATER_REQUEST_TIMEOUT:-30}
+
+      # Scheduler seed (editable later in the GUI -> Settings)
+      WPUPDATER_SCAN_ENABLED: ${WPUPDATER_SCAN_ENABLED:-true}
+      WPUPDATER_SCAN_HOUR: ${WPUPDATER_SCAN_HOUR:-6}
+      WPUPDATER_SCAN_MINUTE: ${WPUPDATER_SCAN_MINUTE:-0}
+
+      # SMTP seed (editable later in the GUI -> Settings)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TLS: ${SMTP_TLS:-true}
+      REPORT_RECIPIENTS: ${REPORT_RECIPIENTS:-}
+    ports:
+      # host:container — change the host side to expose a different port.
+      - "${WPUPDATER_PORT:-8090}:8090"
+    volumes:
+      # SQLite DB + generated reports live here and survive rebuilds.
+      - ./data:/data

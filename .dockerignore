@@ -1,0 +1,21 @@
+# Build / runtime artifacts (the image builds the SPA itself in stage 1)
+frontend/node_modules
+frontend/dist
+app/webui
+**/__pycache__
+*.py[cod]
+
+# Local runtime data + secrets
+data/
+*.db
+*.db-wal
+*.db-shm
+.env
+app/reports/
+
+# VCS / editor / CI
+.git
+.github
+.gitignore
+.venv
+venv

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node / frontend build artifacts (the Docker image builds the SPA itself)
+node_modules/
+frontend/dist/
+app/webui/
+*.tsbuildinfo
+
+# Local runtime data (SQLite DB + generated reports)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Env
+.env
+
+# Reports
+app/reports/
