@@ -5,7 +5,9 @@ export function buildSummary(sites: Site[], activity: ActivityLogEntry[]): Dashb
   const coreUpdates = sites.filter((s) => s.coreUpdateAvailable).length;
   const pluginUpdates = sites.reduce((n, s) => n + s.pluginUpdatesCount, 0);
   const themeUpdates = sites.reduce((n, s) => n + s.themeUpdatesCount, 0);
-  const failedActions = activity.filter((a) => a.status === 'failed' || a.status === 'partial').length;
+  const failedActions = activity.filter(
+    (a) => (a.status === 'failed' || a.status === 'partial') && !a.resolved,
+  ).length;
   const lastScanAt = sites
     .map((s) => s.lastScanAt)
     .filter((v): v is string => Boolean(v))

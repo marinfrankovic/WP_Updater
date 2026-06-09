@@ -247,7 +247,9 @@ code { font-family: var(--mono); font-size: 12px; }
 .data-table tbody tr.is-selected { background: var(--accent-soft); }
 .col-check { width: 40px; }
 .col-num { text-align: right; width: 78px; }
-.col-actions { text-align: right; width: 132px; }
+.col-actions { text-align: right; width: 200px; }
+.row-actions { display: inline-flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.resolved-tag { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; font-size: 12px; font-weight: 600; color: var(--success); border-radius: 7px; background: color-mix(in srgb, var(--success) 14%, transparent); }
 .col-expand { width: 36px; }
 .data-table input[type='checkbox'] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 
@@ -464,6 +466,31 @@ code { font-family: var(--mono); font-size: 12px; }
 .schedule-field input[type='time']:disabled { opacity: 0.5; cursor: not-allowed; }
 .schedule-next { margin: 0 !important; font-size: 12.5px; }
 .schedule-save { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; }
+
+/* ----------------------------------------------------- notification forms */
+.settings-card { max-width: 720px; }
+.schedule-field input[type='text'],
+.schedule-field input[type='email'],
+.schedule-field input[type='number'],
+.schedule-field input[type='password'] {
+  padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 9px;
+  background: var(--bg-sunken); color: var(--text); font-size: 14px; width: 100%;
+}
+.settings-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;
+}
+.settings-grid .schedule-field { max-width: none; }
+.settings-test {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-top: 12px; border-top: 1px solid var(--border);
+}
+.settings-test input {
+  flex: 1 1 200px; min-width: 160px; padding: 9px 12px;
+  border: 1px solid var(--border-strong); border-radius: 9px;
+  background: var(--bg-sunken); color: var(--text); font-size: 14px;
+}
+.settings-test .btn { display: inline-flex; align-items: center; gap: 8px; }
+@media (max-width: 560px) { .settings-grid { grid-template-columns: 1fr; } }
 
 /* ------------------------------------------------------------- help guide */
 .settings-card--help { max-width: 760px; }

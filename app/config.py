@@ -64,6 +64,12 @@ class Config:
     # When true, email reports are sent only if at least one site has updates.
     EMAIL_ONLY_WHEN_UPDATES = _bool("EMAIL_ONLY_WHEN_UPDATES", True)
 
+    # Telegram seed values (editable later in the GUI -> settings table)
+    TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+    # When true, Telegram reports are sent only if at least one site has updates.
+    TELEGRAM_ONLY_WHEN_UPDATES = _bool("TELEGRAM_ONLY_WHEN_UPDATES", True)
+
     @property
     def db_path(self) -> str:
         return os.path.join(self.DATA_DIR, "wpupdater.db")

@@ -159,6 +159,30 @@ export function SiteDetailsDrawer() {
                   </span>
                 </label>
 
+                <label className="drawer__toggle">
+                  <input
+                    type="checkbox"
+                    checked={site.notifyAdmin}
+                    onChange={(e) => editSite(site.id, { notifyAdmin: e.target.checked })}
+                  />
+                  <span>
+                    <strong>Email this site's admin</strong>
+                    <span className="muted">Include this site's WordPress admin address in update report emails.</span>
+                  </span>
+                </label>
+
+                <label className="drawer__toggle">
+                  <input
+                    type="checkbox"
+                    checked={site.notifyTelegram}
+                    onChange={(e) => editSite(site.id, { notifyTelegram: e.target.checked })}
+                  />
+                  <span>
+                    <strong>Telegram alerts</strong>
+                    <span className="muted">Flag this site for Telegram update notifications.</span>
+                  </span>
+                </label>
+
                 <div className="drawer__actions">
                   <button className="btn btn--ghost btn--sm" onClick={() => scanSite(site.id)} disabled={busy}>
                     <RefreshCw size={14} className={site.status === 'scanning' ? 'spin' : ''} /> Scan

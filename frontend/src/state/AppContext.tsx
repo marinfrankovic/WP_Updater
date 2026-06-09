@@ -196,7 +196,14 @@ interface AppContextValue {
   setAutoUpdate: (siteId: string, enabled: boolean) => void;
   editSite: (
     siteId: string,
-    patch: { name?: string; url?: string; apiKey?: string; group?: string },
+    patch: {
+      name?: string;
+      url?: string;
+      apiKey?: string;
+      group?: string;
+      notifyAdmin?: boolean;
+      notifyTelegram?: boolean;
+    },
   ) => void;
   updateItem: (siteId: string, type: UpdateType, slug: string) => void;
   updateSelectedItems: () => void;
@@ -205,6 +212,7 @@ interface AppContextValue {
   updateSite: (siteId: string, scope: UpdateType | 'all') => void;
   bulkUpdate: (siteIds: string[], scope: UpdateType | 'all') => void;
   retryActivity: (entryId: string) => void;
+  resolveActivity: (entryId: string) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -347,6 +355,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [updateSite],
   );
 
+  const resolveActivity = useCallback(
+    async (entryId: string) => {
+      try {
+        const res = await apiClient.resolveActivity(entryId);
+        dispatch({ type: 'SET_STATE', server: res.state });
+        pushToast({ title: 'Marked resolved', variant: 'success' });
+      } catch (err) {
+        pushToast({ title: 'Could not resolve', message: String(err), variant: 'error' });
+      }
+    },
+    [pushToast],
+  );
+
   const addSite = useCallback(
     async (input: { name: string; url: string; apiKey: string; group: string }) => {
       try {
@@ -397,7 +418,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const editSite = useCallback(
     async (
       siteId: string,
-      patch: { name?: string; url?: string; apiKey?: string; group?: string },
+      patch: {
+        name?: string;
+        url?: string;
+        apiKey?: string;
+        group?: string;
+        notifyAdmin?: boolean;
+        notifyTelegram?: boolean;
+      },
     ) => {
       try {
         const res = await apiClient.editSite(siteId, patch);
@@ -494,6 +522,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateSite,
       bulkUpdate,
       retryActivity,
+      resolveActivity,
     }),
     [
       state,
@@ -510,6 +539,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateSite,
       bulkUpdate,
       retryActivity,
+      resolveActivity,
     ],
   );
 

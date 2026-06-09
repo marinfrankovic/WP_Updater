@@ -44,6 +44,8 @@ export interface Site {
   lastScanAt: string | null; // ISO timestamp
   lastUpdatedAt: string | null; // ISO timestamp
   autoUpdate: boolean;
+  notifyAdmin: boolean;
+  notifyTelegram: boolean;
   group: string;
   selected: boolean;
   /** Progress 0–100 while scanning/updating (UI-only, optional). */
@@ -75,6 +77,8 @@ export interface ActivityLogEntry {
   error?: string;
   /** Optional per-item breakdown for expandable error details. */
   details?: { name: string; result: 'success' | 'failed'; message?: string }[];
+  /** When true, this failure no longer counts on the dashboard tile. */
+  resolved: boolean;
 }
 
 /** Top-of-dashboard summary widgets. */

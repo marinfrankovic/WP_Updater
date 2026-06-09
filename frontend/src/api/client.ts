@@ -18,6 +18,25 @@ export interface ScanSchedule {
   lastRun: string | null;
 }
 
+export interface EmailSettings {
+  enabled: boolean;
+  host: string;
+  port: number;
+  user: string;
+  from: string;
+  tls: boolean;
+  recipients: string;
+  onlyWhenUpdates: boolean;
+  passwordSet: boolean;
+}
+
+export interface TelegramSettings {
+  enabled: boolean;
+  chatId: string;
+  onlyWhenUpdates: boolean;
+  tokenSet: boolean;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -50,7 +69,14 @@ export const apiClient = {
 
   editSite: (
     id: string,
-    patch: { name?: string; url?: string; apiKey?: string; group?: string },
+    patch: {
+      name?: string;
+      url?: string;
+      apiKey?: string;
+      group?: string;
+      notifyAdmin?: boolean;
+      notifyTelegram?: boolean;
+    },
   ) =>
     request<{ ok: boolean; state: ServerState }>(`/sites/${id}`, {
       method: 'PATCH',
@@ -86,11 +112,46 @@ export const apiClient = {
       body: JSON.stringify({ siteIds, scope }),
     }),
 
+  resolveActivity: (id: string) =>
+    request<{ ok: boolean; state: ServerState }>(`/activity/${id}/resolve`, { method: 'POST' }),
+
   getSchedule: () => request<ScanSchedule>('/schedule'),
 
   setSchedule: (patch: Partial<Pick<ScanSchedule, 'enabled' | 'hour' | 'minute'>>) =>
     request<{ ok: boolean; schedule: ScanSchedule }>('/schedule', {
       method: 'POST',
       body: JSON.stringify(patch),
+    }),
+
+  getEmail: () => request<EmailSettings>('/email'),
+
+  setEmail: (
+    patch: Partial<Omit<EmailSettings, 'passwordSet'>> & { password?: string },
+  ) =>
+    request<{ ok: boolean; email: EmailSettings }>('/email', {
+      method: 'POST',
+      body: JSON.stringify(patch),
+    }),
+
+  testEmail: (recipient: string) =>
+    request<{ ok: boolean; message: string }>('/email/test', {
+      method: 'POST',
+      body: JSON.stringify({ recipient }),
+    }),
+
+  getTelegram: () => request<TelegramSettings>('/notifications'),
+
+  setTelegram: (
+    patch: Partial<Omit<TelegramSettings, 'tokenSet'>> & { token?: string },
+  ) =>
+    request<{ ok: boolean; notifications: TelegramSettings }>('/notifications', {
+      method: 'POST',
+      body: JSON.stringify(patch),
+    }),
+
+  testTelegram: (override?: { chatId?: string; token?: string }) =>
+    request<{ ok: boolean; message: string }>('/notifications/test', {
+      method: 'POST',
+      body: JSON.stringify(override ?? {}),
     }),
 };

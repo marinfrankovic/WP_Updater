@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useApp } from '../state/AppContext';
 import type { ActivityLogEntry } from '../types';
@@ -6,7 +6,7 @@ import { actionLabel, formatDuration, relativeTime } from '../utils/format';
 import { StatusBadge } from './StatusBadge';
 
 export function ActivityLogTable({ entries }: { entries: ActivityLogEntry[] }) {
-  const { state, retryActivity } = useApp();
+  const { state, retryActivity, resolveActivity } = useApp();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   return (
@@ -56,21 +56,36 @@ export function ActivityLogTable({ entries }: { entries: ActivityLogEntry[] }) {
                           state.sites.find((s) => s.id === entry.siteId)?.status === 'updating',
                       );
                       return (
-                        <button
-                          className="btn btn--xs btn--ghost"
-                          onClick={() => retryActivity(entry.id)}
-                          disabled={retrying}
-                        >
-                          {retrying ? (
-                            <>
-                              <RefreshCw size={13} className="spin" /> Updating…
-                            </>
+                        <div className="row-actions">
+                          <button
+                            className="btn btn--xs btn--ghost"
+                            onClick={() => retryActivity(entry.id)}
+                            disabled={retrying}
+                          >
+                            {retrying ? (
+                              <>
+                                <RefreshCw size={13} className="spin" /> Updating…
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw size={13} /> Retry
+                              </>
+                            )}
+                          </button>
+                          {entry.resolved ? (
+                            <span className="resolved-tag" title="Cleared from the dashboard tile">
+                              <Check size={13} /> Resolved
+                            </span>
                           ) : (
-                            <>
-                              <RotateCcw size={13} /> Retry
-                            </>
+                            <button
+                              className="btn btn--xs btn--ghost"
+                              onClick={() => resolveActivity(entry.id)}
+                              title="Clear this error from the dashboard tile (keeps the log entry)"
+                            >
+                              <Check size={13} /> Resolved
+                            </button>
                           )}
-                        </button>
+                        </div>
                       );
                     })()}
                   </td>

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, jsonify, request
 
-from . import db, scanner, scheduler
+from . import db, emailer, scanner, scheduler, telegram
 
 api = Blueprint("api", __name__, url_prefix="/api")
 
@@ -59,6 +59,8 @@ def _serialize_site(site: Dict[str, Any], scan: Optional[Dict[str, Any]]) -> Dic
         "lastScanAt": scan.get("scanned_at") if scan else None,
         "lastUpdatedAt": site.get("last_updated_at"),
         "autoUpdate": bool(site.get("auto_update")),
+        "notifyAdmin": bool(site.get("notify_admin")),
+        "notifyTelegram": bool(site.get("notify_telegram")),
         "group": site.get("grp") or "Ungrouped",
         "selected": False,
     }
@@ -127,6 +129,7 @@ def _serialize_activity(row: Dict[str, Any]) -> Dict[str, Any]:
         "durationMs": row.get("duration_ms") or 0,
         "error": row.get("error"),
         "details": row.get("details"),
+        "resolved": bool(row.get("resolved")),
     }
 
 
@@ -204,6 +207,10 @@ def update_site_info_route(site_id: int):
         fields["url"] = url
     if "group" in data:
         fields["grp"] = (data.get("group") or "Ungrouped").strip() or "Ungrouped"
+    if "notifyAdmin" in data:
+        fields["notify_admin"] = bool(data.get("notifyAdmin"))
+    if "notifyTelegram" in data:
+        fields["notify_telegram"] = bool(data.get("notifyTelegram"))
     # API key is optional: only change it when a non-empty value is provided.
     api_key = (data.get("apiKey") or "").strip()
     if api_key:
@@ -314,6 +321,10 @@ def _finalize_update(site: Dict[str, Any], action: str, details: List[Dict[str, 
         error=error_text,
         details=details or None,
     )
+    # A successful update clears this site's outstanding error warning on the
+    # dashboard tile (the failed entries stay in the activity log, just resolved).
+    if status == "success":
+        db.resolve_site_failures(site["id"])
     return {"ok": any_ok, "status": status, "error": first_err}
 
 
@@ -416,6 +427,12 @@ def set_auto_update_route(site_id: int):
     return jsonify({"ok": True, "state": _full_state()})
 
 
+@api.post("/activity/<int:entry_id>/resolve")
+def resolve_activity_route(entry_id: int):
+    db.resolve_activity(entry_id)
+    return jsonify({"ok": True, "state": _full_state()})
+
+
 @api.post("/scan-all")
 def scan_all_route():
     for site in db.list_sites(enabled_only=True):
@@ -503,4 +520,132 @@ def set_schedule_route():
     # Wake the scheduler so the new schedule takes effect immediately.
     scheduler.request_reschedule()
     return jsonify({"ok": True, "schedule": _schedule_payload()})
+
+
+# --------------------------------------------------------------------------- #
+# Email / SMTP settings
+# --------------------------------------------------------------------------- #
+def _email_payload() -> Dict[str, Any]:
+    s = db.get_settings_dict()
+    try:
+        port = int(s.get("smtp_port", "587") or 587)
+    except (TypeError, ValueError):
+        port = 587
+    return {
+        "enabled": s.get("email_enabled", "0") == "1",
+        "host": s.get("smtp_host", "") or "",
+        "port": port,
+        "user": s.get("smtp_user", "") or "",
+        "from": s.get("smtp_from", "") or "",
+        "tls": s.get("smtp_tls", "1") == "1",
+        "recipients": s.get("report_recipients", "") or "",
+        "onlyWhenUpdates": s.get("email_only_when_updates", "1") == "1",
+        # Never expose the stored password; only whether one is set.
+        "passwordSet": bool(s.get("smtp_password")),
+    }
+
+
+@api.get("/email")
+def get_email_route():
+    return jsonify(_email_payload())
+
+
+@api.post("/email")
+def set_email_route():
+    data = request.get_json(silent=True) or {}
+
+    if "enabled" in data:
+        db.set_setting("email_enabled", "1" if data.get("enabled") else "0")
+    if "onlyWhenUpdates" in data:
+        db.set_setting("email_only_when_updates", "1" if data.get("onlyWhenUpdates") else "0")
+    if "tls" in data:
+        db.set_setting("smtp_tls", "1" if data.get("tls") else "0")
+    if "host" in data:
+        db.set_setting("smtp_host", (data.get("host") or "").strip())
+    if "user" in data:
+        db.set_setting("smtp_user", (data.get("user") or "").strip())
+    if "from" in data:
+        db.set_setting("smtp_from", (data.get("from") or "").strip())
+    if "recipients" in data:
+        recipients = ",".join(
+            r.strip() for r in (data.get("recipients") or "").split(",") if r.strip()
+        )
+        db.set_setting("report_recipients", recipients)
+    if "port" in data:
+        try:
+            port = int(data["port"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "port must be a number"}), 400
+        if not 1 <= port <= 65535:
+            return jsonify({"error": "port must be between 1 and 65535"}), 400
+        db.set_setting("smtp_port", str(port))
+    # Password is write-only: only overwrite when a non-empty value is supplied.
+    password = data.get("password")
+    if isinstance(password, str) and password.strip():
+        db.set_setting("smtp_password", password)
+
+    return jsonify({"ok": True, "email": _email_payload()})
+
+
+@api.post("/email/test")
+def test_email_route():
+    data = request.get_json(silent=True) or {}
+    recipient = (data.get("recipient") or "").strip()
+    if not recipient:
+        return jsonify({"error": "recipient is required"}), 400
+    ok, err = emailer.send_test(recipient)
+    if not ok:
+        return jsonify({"error": err or "Send failed"}), 502
+    return jsonify({"ok": True, "message": f"Test email sent to {recipient}."})
+
+
+# --------------------------------------------------------------------------- #
+# Telegram notifications
+# --------------------------------------------------------------------------- #
+def _telegram_payload() -> Dict[str, Any]:
+    s = db.get_settings_dict()
+    return {
+        "enabled": s.get("telegram_enabled", "0") == "1",
+        "chatId": s.get("telegram_chat_id", "") or "",
+        "onlyWhenUpdates": s.get("telegram_only_when_updates", "1") == "1",
+        # Never expose the stored bot token; only whether one is set.
+        "tokenSet": bool(s.get("telegram_bot_token")),
+    }
+
+
+@api.get("/notifications")
+def get_notifications_route():
+    return jsonify(_telegram_payload())
+
+
+@api.post("/notifications")
+def set_notifications_route():
+    data = request.get_json(silent=True) or {}
+
+    if "enabled" in data:
+        db.set_setting("telegram_enabled", "1" if data.get("enabled") else "0")
+    if "onlyWhenUpdates" in data:
+        db.set_setting("telegram_only_when_updates", "1" if data.get("onlyWhenUpdates") else "0")
+    if "chatId" in data:
+        db.set_setting("telegram_chat_id", (data.get("chatId") or "").strip())
+    # Token is write-only: only overwrite when a non-empty value is supplied.
+    token = data.get("token")
+    if isinstance(token, str) and token.strip():
+        db.set_setting("telegram_bot_token", token.strip())
+
+    return jsonify({"ok": True, "notifications": _telegram_payload()})
+
+
+@api.post("/notifications/test")
+def test_notifications_route():
+    data = request.get_json(silent=True) or {}
+    # Allow an inline chat id / token override so the user can test before saving.
+    chat_id = (data.get("chatId") or db.get_setting("telegram_chat_id", "") or "").strip()
+    token = (data.get("token") or "").strip() or None
+    if not chat_id:
+        return jsonify({"error": "chatId is required"}), 400
+    ok, err = telegram.send_test(chat_id, token=token)
+    if not ok:
+        return jsonify({"error": err or "Send failed"}), 502
+    return jsonify({"ok": True, "message": "Test message sent."})
 

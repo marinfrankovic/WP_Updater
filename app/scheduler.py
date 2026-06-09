@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional
 
-from . import db, emailer, reports, scanner
+from . import db, emailer, reports, scanner, telegram
 
 _thread: Optional[threading.Thread] = None
 _stop = threading.Event()
@@ -31,6 +31,10 @@ def run_scan_cycle(send_email: bool = True) -> dict:
             email_msg = None
             if send_email:
                 ok, email_msg = emailer.send_report(force=False)
+                try:
+                    telegram.send_report(force=False)
+                except Exception:  # noqa: BLE001 - never let a notifier kill the cycle
+                    pass
             _state["last_run"] = datetime.now().isoformat(timespec="seconds")
             return {"results": results, "email": email_msg}
         finally:

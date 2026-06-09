@@ -115,9 +115,14 @@ def init_db() -> None:
             conn.execute("ALTER TABLE sites ADD COLUMN grp TEXT NOT NULL DEFAULT 'Ungrouped'")
         if "last_updated_at" not in cols:
             conn.execute("ALTER TABLE sites ADD COLUMN last_updated_at TEXT")
+        if "notify_telegram" not in cols:
+            conn.execute("ALTER TABLE sites ADD COLUMN notify_telegram INTEGER NOT NULL DEFAULT 0")
         scan_cols = {r["name"] for r in conn.execute("PRAGMA table_info(scans)").fetchall()}
         if "connector_version" not in scan_cols:
             conn.execute("ALTER TABLE scans ADD COLUMN connector_version TEXT")
+        activity_cols = {r["name"] for r in conn.execute("PRAGMA table_info(activity)").fetchall()}
+        if "resolved" not in activity_cols:
+            conn.execute("ALTER TABLE activity ADD COLUMN resolved INTEGER NOT NULL DEFAULT 0")
 
 
 # --------------------------------------------------------------------------- #
@@ -161,6 +166,10 @@ def seed_settings_if_empty() -> None:
         "report_recipients": config.REPORT_RECIPIENTS,
         "email_only_when_updates": "1" if config.EMAIL_ONLY_WHEN_UPDATES else "0",
         "email_enabled": "1" if config.SMTP_HOST else "0",
+        "telegram_bot_token": config.TELEGRAM_BOT_TOKEN,
+        "telegram_chat_id": config.TELEGRAM_CHAT_ID,
+        "telegram_only_when_updates": "1" if config.TELEGRAM_ONLY_WHEN_UPDATES else "0",
+        "telegram_enabled": "1" if (config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID) else "0",
     }
     for k, v in defaults.items():
         if get_setting(k) is None:
@@ -177,15 +186,16 @@ def _normalize_url(url: str) -> str:
 
 def add_site(name: str, url: str, api_key: str, auto_update: bool = False,
              notify_admin: bool = False, enabled: bool = True,
-             grp: str = "Ungrouped") -> int:
+             grp: str = "Ungrouped", notify_telegram: bool = False) -> int:
     now = _utcnow()
     with _lock, get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO sites(name, url, api_key, enabled, auto_update, notify_admin, grp, created_at, updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO sites(name, url, api_key, enabled, auto_update, notify_admin, notify_telegram, grp, created_at, updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
             (name.strip(), _normalize_url(url), api_key.strip(),
              1 if enabled else 0, 1 if auto_update else 0,
-             1 if notify_admin else 0, (grp or "Ungrouped").strip(), now, now),
+             1 if notify_admin else 0, 1 if notify_telegram else 0,
+             (grp or "Ungrouped").strip(), now, now),
         )
         return int(cur.lastrowid)
 
@@ -193,14 +203,14 @@ def add_site(name: str, url: str, api_key: str, auto_update: bool = False,
 def update_site(site_id: int, **fields: Any) -> None:
     if not fields:
         return
-    allowed = {"name", "url", "api_key", "enabled", "auto_update", "notify_admin", "grp"}
+    allowed = {"name", "url", "api_key", "enabled", "auto_update", "notify_admin", "notify_telegram", "grp"}
     cols, vals = [], []
     for k, v in fields.items():
         if k not in allowed:
             continue
         if k == "url":
             v = _normalize_url(v)
-        if k in ("enabled", "auto_update", "notify_admin"):
+        if k in ("enabled", "auto_update", "notify_admin", "notify_telegram"):
             v = 1 if v else 0
         cols.append(f"{k}=?")
         vals.append(v)
@@ -324,6 +334,24 @@ def list_activity(limit: int = 100) -> List[Dict[str, Any]]:
             d["details"] = json.loads(d["details"]) if d.get("details") else None
             out.append(d)
         return out
+
+
+def resolve_activity(entry_id: int) -> None:
+    """Mark a single activity entry resolved so it stops counting on the
+    dashboard tile. The entry itself is left untouched in the log."""
+    with _lock, get_conn() as conn:
+        conn.execute("UPDATE activity SET resolved=1 WHERE id=?", (entry_id,))
+
+
+def resolve_site_failures(site_id: int) -> None:
+    """Clear the dashboard error warning for a site by marking its prior
+    failed/partial entries resolved (used after a successful update)."""
+    with _lock, get_conn() as conn:
+        conn.execute(
+            "UPDATE activity SET resolved=1 "
+            "WHERE site_id=? AND status IN ('failed','partial') AND resolved=0",
+            (site_id,),
+        )
 
 
 def prune_activity(keep: int = 500) -> None:

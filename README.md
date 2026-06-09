@@ -119,9 +119,10 @@ scanning, deploying updates and editing a site.
 
 ## Configuration
 
-Everything is configured with environment variables. The daily scan time can
-also be changed live in the **Settings** page; SMTP / email reporting is
-configured via environment variables only.
+Everything is configured with environment variables. The daily scan time,
+SMTP / email reporting and Telegram notifications can also be configured live
+in the **Settings** page (the environment variables below just seed the
+initial values).
 
 | Variable | Default | Notes |
 |----------|---------|-------|
@@ -134,6 +135,7 @@ configured via environment variables only.
 | `WPUPDATER_SCAN_ENABLED` | `true` | Enable the daily automatic scan |
 | `WPUPDATER_SCAN_HOUR` / `_MINUTE` | `6` / `0` | Daily scan time (local `TZ`) |
 | `SMTP_HOST` … `REPORT_RECIPIENTS` | empty | Email reporting (see `.env.example`) |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | empty | Telegram notifications (see `.env.example`) |
 
 Data (SQLite DB + generated reports) is stored in the mounted `/data` volume and
 survives container rebuilds.
@@ -162,7 +164,13 @@ Each site uses its own 64-char API key sent in a request header over HTTPS; keep
 - **Manual scans** — "Scan all" and per-site scan.
 - **Scheduled daily scan** at a configurable time (Settings page).
 - **Automatic email reports** via SMTP, sent after the scheduled daily scan;
-  configured with environment variables, optionally only when updates are pending.
+  configurable in the **Settings** page (or via environment variables), with an
+  optional "only when updates are pending" mode and a **Send test** button.
+- **Telegram notifications** sent after the scheduled scan; configure the bot
+  token and chat ID in the **Settings** page and send a test message.
+- Email and Telegram each send **one cumulative message** summarising every
+  selected site, and you can choose **per-site** which sites are included from
+  the site details drawer.
 - **HTML / Markdown reports** available at `/report.html` and `/report.md`.
 - **Per-site auto-update** checkbox (real WordPress auto-updates, not just a flag).
 - **One-click "Update all"** per site, and **per-item updates** — update a single
@@ -173,7 +181,10 @@ Each site uses its own 64-char API key sent in a request header over HTTPS; keep
   in the Sites table opens the details drawer **directly in edit mode**.
 - **Connector version** column so you can see which sites run the latest connector.
 - **Activity log** with status badges, durations, expandable error details and
-  **Retry** for failed/partial actions.
+  **Retry** for failed/partial actions. A failed entry can be marked
+  **Resolved** to clear it from the dashboard **Failed / partial** tile while
+  keeping the log entry intact; a successful update for a site also clears its
+  outstanding errors automatically.
 - **Dark mode** (persisted), empty states, loading skeletons and toast notifications.
 
 The UI is deliberately scoped to **updating WordPress core, plugins and themes
