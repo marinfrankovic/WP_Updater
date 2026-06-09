@@ -119,8 +119,9 @@ scanning, deploying updates and editing a site.
 
 ## Configuration
 
-Everything is configured with environment variables; scheduler and SMTP settings
-are also editable live in the **Settings** page.
+Everything is configured with environment variables. The daily scan time can
+also be changed live in the **Settings** page; SMTP / email reporting is
+configured via environment variables only.
 
 | Variable | Default | Notes |
 |----------|---------|-------|
@@ -153,15 +154,16 @@ Each site uses its own 64-char API key sent in a request header over HTTPS; keep
 
 ## Features
 
-- **Dashboard cards** per site: pending core/plugin/theme counts, WP/PHP version,
-  expandable list of exactly what needs updating.
+- **Dashboard overview** — a per-site table with pending core/plugin/theme counts,
+  WordPress version, connector version, last scan and status. Opening a site shows a
+  details drawer with an expandable list of exactly what needs updating.
 - **Clickable summary tiles** — Core / Plugin / Theme / Sites-with-updates open the
   **Updates** page on the matching tab; **Failed / partial** opens the **Activity Log**.
-- **Scan all now** (with optional "email report after scan") and **per-site scan**.
+- **Manual scans** — "Scan all" and per-site scan.
 - **Scheduled daily scan** at a configurable time (Settings page).
-- **Email reports** via SMTP — to dashboard recipients and/or each opted-in site's
-  admin; optionally only when updates are pending. Includes a **Send test email**.
-- **Downloadable report** as HTML (`/report.html`) or Markdown (`/report.md`).
+- **Automatic email reports** via SMTP, sent after the scheduled daily scan;
+  configured with environment variables, optionally only when updates are pending.
+- **HTML / Markdown reports** available at `/report.html` and `/report.md`.
 - **Per-site auto-update** checkbox (real WordPress auto-updates, not just a flag).
 - **One-click "Update all"** per site, and **per-item updates** — update a single
   plugin, theme, or core on its own with a live "Updating…" indicator. On the
