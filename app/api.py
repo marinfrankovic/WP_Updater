@@ -445,6 +445,17 @@ def scan_all_route():
             error=None if result["ok"] else result.get("error"),
         )
     db.prune_activity()
+    # A manual "Scan all" now also sends the configured reports (respecting the
+    # enabled / only-when-updates settings), so updates released between the
+    # scheduled scans still trigger a notification when you refresh.
+    try:
+        emailer.send_report(force=False)
+    except Exception:  # noqa: BLE001 - never let a notifier fail the request
+        pass
+    try:
+        telegram.send_report(force=False)
+    except Exception:  # noqa: BLE001
+        pass
     return jsonify({"ok": True, "state": _full_state()})
 
 
@@ -478,10 +489,20 @@ def _schedule_payload() -> Dict[str, Any]:
         minute = int(settings.get("scan_minute", "0") or 0)
     except (TypeError, ValueError):
         minute = 0
+    cron = scheduler._effective_cron(settings)
+    # Keep the legacy hour/minute fields in sync with the effective cron when it
+    # is a simple "every day at HH:MM" expression, so older clients still work.
+    parts = cron.split()
+    if len(parts) == 5 and parts[1].isdigit() and parts[0].isdigit() \
+            and parts[2] == "*" and parts[3] == "*" and parts[4] == "*":
+        minute = max(0, min(59, int(parts[0])))
+        hour = max(0, min(23, int(parts[1])))
     return {
         "enabled": settings.get("scan_enabled", "1") == "1",
         "hour": max(0, min(23, hour)),
         "minute": max(0, min(59, minute)),
+        "cron": cron,
+        "description": scheduler.describe_cron(cron),
         "nextRun": status.get("next_run"),
         "lastRun": status.get("last_run"),
     }
@@ -499,27 +520,51 @@ def set_schedule_route():
     if "enabled" in data:
         db.set_setting("scan_enabled", "1" if data.get("enabled") else "0")
 
-    if "hour" in data:
-        try:
-            hour = int(data["hour"])
-        except (TypeError, ValueError):
-            return jsonify({"error": "hour must be a number 0-23"}), 400
-        if not 0 <= hour <= 23:
-            return jsonify({"error": "hour must be between 0 and 23"}), 400
-        db.set_setting("scan_hour", str(hour))
+    # Preferred: a full cron expression (built by the UI or supplied directly).
+    if "cron" in data and data["cron"] is not None:
+        cron = str(data["cron"]).strip()
+        ok, err = scheduler.validate_cron(cron)
+        if not ok:
+            return jsonify({"error": f"Invalid cron expression: {err}"}), 400
+        db.set_setting("scan_cron", cron)
+        # Mirror simple daily expressions back into the legacy fields.
+        parts = cron.split()
+        if len(parts) == 5 and parts[0].isdigit() and parts[1].isdigit() \
+                and parts[2] == "*" and parts[3] == "*" and parts[4] == "*":
+            db.set_setting("scan_minute", str(int(parts[0])))
+            db.set_setting("scan_hour", str(int(parts[1])))
 
-    if "minute" in data:
-        try:
-            minute = int(data["minute"])
-        except (TypeError, ValueError):
-            return jsonify({"error": "minute must be a number 0-59"}), 400
-        if not 0 <= minute <= 59:
-            return jsonify({"error": "minute must be between 0 and 59"}), 400
-        db.set_setting("scan_minute", str(minute))
+    # Legacy: discrete hour/minute (kept for backward compatibility). When no
+    # cron is supplied, build a daily expression from these so the engine and
+    # the GUI stay consistent.
+    elif "hour" in data or "minute" in data:
+        hour = None
+        minute = None
+        if "hour" in data:
+            try:
+                hour = int(data["hour"])
+            except (TypeError, ValueError):
+                return jsonify({"error": "hour must be a number 0-23"}), 400
+            if not 0 <= hour <= 23:
+                return jsonify({"error": "hour must be between 0 and 23"}), 400
+            db.set_setting("scan_hour", str(hour))
+        if "minute" in data:
+            try:
+                minute = int(data["minute"])
+            except (TypeError, ValueError):
+                return jsonify({"error": "minute must be a number 0-59"}), 400
+            if not 0 <= minute <= 59:
+                return jsonify({"error": "minute must be between 0 and 59"}), 400
+            db.set_setting("scan_minute", str(minute))
+        s = db.get_settings_dict()
+        h = hour if hour is not None else int(s.get("scan_hour", "6") or 6)
+        m = minute if minute is not None else int(s.get("scan_minute", "0") or 0)
+        db.set_setting("scan_cron", f"{m} {h} * * *")
 
     # Wake the scheduler so the new schedule takes effect immediately.
     scheduler.request_reschedule()
     return jsonify({"ok": True, "schedule": _schedule_payload()})
+
 
 
 # --------------------------------------------------------------------------- #

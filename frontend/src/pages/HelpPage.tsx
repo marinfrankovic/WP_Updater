@@ -49,9 +49,11 @@ export function HelpPage() {
               <strong>3. Scan for updates</strong>
               <p>
                 Use <em>Scan Now</em> in the top bar to refresh every site, or the scan button on an individual row. Each
-                site shows pending core, plugin and theme counts. In addition to these manual scans, the dashboard runs an
-                <em> automatic scan once a day</em> (06:00 by default) that re-checks every enabled site and emails a
-                summary report. You can change the time — or turn the daily scan off — under <em>Settings → Scan schedule</em>.
+                site shows pending core, plugin and theme counts. A manual <em>Scan Now</em> also sends the configured
+                email/Telegram report when updates are found. In addition, the dashboard runs
+                <em> automatic scans on a schedule you choose</em> (hourly, daily, several times a day, weekly, monthly or a
+                custom cron expression; daily at 06:00 by default) that re-check every enabled site and send a summary
+                report. You can change the schedule — or turn automatic scans off — under <em>Settings → Scan schedule</em>.
               </p>
             </div>
           </li>
@@ -98,8 +100,8 @@ export function HelpPage() {
 
         <p className="muted help-note">
           Tip: updates always run sequentially (never in parallel) so a site is only ever applying one change at a time.
-          Scans run on demand (manual) and automatically once a day; updates themselves are only ever applied manually —
-          they are never installed by the scheduler.
+          Scans run on demand (manual) and automatically on your chosen schedule; updates themselves are only ever applied
+          manually — they are never installed by the scheduler.
         </p>
       </section>
     </div>

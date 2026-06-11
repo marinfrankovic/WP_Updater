@@ -2,6 +2,13 @@ import { useEffect, useState } from 'react';
 import { CalendarClock, Mail, MessageCircle, Moon, RefreshCw, Save, Send, Sun } from 'lucide-react';
 import { useApp } from '../state/AppContext';
 import { apiClient, type EmailSettings, type ScanSchedule, type TelegramSettings } from '../api/client';
+import {
+  cronToForm,
+  formToCron,
+  WEEKDAY_LABELS,
+  type ScanFrequency,
+  type ScheduleForm,
+} from '../lib/cron';
 
 function pad(n: number): string {
   return n.toString().padStart(2, '0');
@@ -14,13 +21,22 @@ function formatRun(iso: string | null): string {
   return d.toLocaleString();
 }
 
+const FREQUENCY_OPTIONS: { value: ScanFrequency; label: string }[] = [
+  { value: 'hourly', label: 'Hourly' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'multiple', label: 'Several times a day' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'custom', label: 'Custom cron' },
+];
+
 export function SettingsPage() {
   const { state, setTheme, pushToast } = useApp();
 
   // -------------------------------------------------------------- schedule
   const [schedule, setSchedule] = useState<ScanSchedule | null>(null);
   const [enabled, setEnabled] = useState(true);
-  const [time, setTime] = useState('06:00');
+  const [form, setForm] = useState<ScheduleForm>(() => cronToForm('0 6 * * *'));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -59,7 +75,7 @@ export function SettingsPage() {
         if (!active) return;
         setSchedule(s);
         setEnabled(s.enabled);
-        setTime(`${pad(s.hour)}:${pad(s.minute)}`);
+        setForm(cronToForm(s.cron || `${s.minute} ${s.hour} * * *`));
 
         setEmail(e);
         setEmailForm({
@@ -94,26 +110,46 @@ export function SettingsPage() {
   }, [pushToast]);
 
   async function saveSchedule() {
-    const [hourStr, minuteStr] = time.split(':');
-    const hour = Number.parseInt(hourStr, 10);
-    const minute = Number.parseInt(minuteStr, 10);
-    if (Number.isNaN(hour) || Number.isNaN(minute)) {
-      pushToast({ title: 'Invalid time', message: 'Pick a valid scan time', variant: 'error' });
+    const cron = formToCron(form).trim();
+    if (!cron || cron.split(/\s+/).length !== 5) {
+      pushToast({
+        title: 'Invalid schedule',
+        message: 'Enter a valid 5-field cron expression (minute hour day month weekday).',
+        variant: 'error',
+      });
+      return;
+    }
+    if (form.frequency === 'multiple' && form.hours.length === 0) {
+      pushToast({ title: 'Pick at least one time', message: 'Select the hours to scan at.', variant: 'error' });
+      return;
+    }
+    if (form.frequency === 'weekly' && form.weekdays.length === 0) {
+      pushToast({ title: 'Pick at least one day', message: 'Select the weekday(s) to scan on.', variant: 'error' });
       return;
     }
     setSaving(true);
     try {
-      const res = await apiClient.setSchedule({ enabled, hour, minute });
+      const res = await apiClient.setSchedule({ enabled, cron });
       setSchedule(res.schedule);
       setEnabled(res.schedule.enabled);
-      setTime(`${pad(res.schedule.hour)}:${pad(res.schedule.minute)}`);
-      pushToast({ title: 'Scan schedule saved', variant: 'success' });
+      setForm(cronToForm(res.schedule.cron));
+      pushToast({ title: 'Scan schedule saved', message: res.schedule.description, variant: 'success' });
     } catch (err) {
       pushToast({ title: 'Could not save schedule', message: String(err), variant: 'error' });
     } finally {
       setSaving(false);
     }
   }
+
+  function patchForm(patch: Partial<ScheduleForm>) {
+    setForm((prev) => ({ ...prev, ...patch }));
+  }
+
+  function toggleInArray(arr: number[], value: number): number[] {
+    return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
+  }
+
+  const previewCron = formToCron(form).trim();
 
   async function saveEmail() {
     setEmailSaving(true);
@@ -219,7 +255,7 @@ export function SettingsPage() {
           <CalendarClock size={18} /> Scan schedule
         </h2>
         <p className="muted">
-          WP Updater automatically scans every site once a day for available updates and sends a report. Updates are never
+          WP Updater automatically scans every site on a schedule you choose and sends a report. Updates are never
           installed automatically — they are only ever applied when you click Update.
         </p>
 
@@ -231,19 +267,183 @@ export function SettingsPage() {
           <div className="schedule-form">
             <label className="schedule-toggle">
               <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-              <span>Run the daily automatic scan</span>
+              <span>Run automatic scans</span>
             </label>
 
             <div className="schedule-field">
-              <label htmlFor="scan-time">Scan time (server time)</label>
-              <input
-                id="scan-time"
-                type="time"
-                value={time}
+              <label htmlFor="scan-frequency">Frequency</label>
+              <select
+                id="scan-frequency"
+                value={form.frequency}
                 disabled={!enabled}
-                onChange={(e) => setTime(e.target.value)}
-              />
+                onChange={(e) => patchForm({ frequency: e.target.value as ScanFrequency })}
+              >
+                {FREQUENCY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </div>
+
+            {form.frequency === 'hourly' && (
+              <div className="schedule-row">
+                <div className="schedule-field">
+                  <label htmlFor="every-hours">Run every (hours)</label>
+                  <select
+                    id="every-hours"
+                    value={form.everyHours}
+                    disabled={!enabled}
+                    onChange={(e) => patchForm({ everyHours: Number.parseInt(e.target.value, 10) })}
+                  >
+                    {[1, 2, 3, 4, 6, 8, 12].map((n) => (
+                      <option key={n} value={n}>
+                        {n === 1 ? 'Every hour' : `Every ${n} hours`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="schedule-field">
+                  <label htmlFor="hourly-minute">At minute</label>
+                  <input
+                    id="hourly-minute"
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={form.minute}
+                    disabled={!enabled}
+                    onChange={(e) => patchForm({ minute: Number.parseInt(e.target.value, 10) || 0 })}
+                  />
+                </div>
+              </div>
+            )}
+
+            {form.frequency === 'daily' && (
+              <div className="schedule-field">
+                <label htmlFor="scan-time">Scan time (server time)</label>
+                <input
+                  id="scan-time"
+                  type="time"
+                  value={form.time}
+                  disabled={!enabled}
+                  onChange={(e) => patchForm({ time: e.target.value })}
+                />
+              </div>
+            )}
+
+            {form.frequency === 'multiple' && (
+              <>
+                <div className="schedule-field">
+                  <label>Run at these hours</label>
+                  <div className="schedule-chips">
+                    {Array.from({ length: 24 }, (_, h) => h).map((h) => (
+                      <button
+                        type="button"
+                        key={h}
+                        className={`schedule-chip${form.hours.includes(h) ? ' is-active' : ''}`}
+                        disabled={!enabled}
+                        onClick={() => patchForm({ hours: toggleInArray(form.hours, h) })}
+                      >
+                        {pad(h)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="schedule-field">
+                  <label htmlFor="multi-minute">At minute</label>
+                  <input
+                    id="multi-minute"
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={form.minute}
+                    disabled={!enabled}
+                    onChange={(e) => patchForm({ minute: Number.parseInt(e.target.value, 10) || 0 })}
+                  />
+                </div>
+              </>
+            )}
+
+            {form.frequency === 'weekly' && (
+              <>
+                <div className="schedule-field">
+                  <label>On these days</label>
+                  <div className="schedule-chips">
+                    {WEEKDAY_LABELS.map((label, idx) => (
+                      <button
+                        type="button"
+                        key={label}
+                        className={`schedule-chip${form.weekdays.includes(idx) ? ' is-active' : ''}`}
+                        disabled={!enabled}
+                        onClick={() => patchForm({ weekdays: toggleInArray(form.weekdays, idx) })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="schedule-field">
+                  <label htmlFor="weekly-time">Scan time (server time)</label>
+                  <input
+                    id="weekly-time"
+                    type="time"
+                    value={form.time}
+                    disabled={!enabled}
+                    onChange={(e) => patchForm({ time: e.target.value })}
+                  />
+                </div>
+              </>
+            )}
+
+            {form.frequency === 'monthly' && (
+              <div className="schedule-row">
+                <div className="schedule-field">
+                  <label htmlFor="month-day">Day of month</label>
+                  <input
+                    id="month-day"
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={form.monthDay}
+                    disabled={!enabled}
+                    onChange={(e) => patchForm({ monthDay: Number.parseInt(e.target.value, 10) || 1 })}
+                  />
+                </div>
+                <div className="schedule-field">
+                  <label htmlFor="monthly-time">Scan time (server time)</label>
+                  <input
+                    id="monthly-time"
+                    type="time"
+                    value={form.time}
+                    disabled={!enabled}
+                    onChange={(e) => patchForm({ time: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+
+            {form.frequency === 'custom' && (
+              <div className="schedule-field">
+                <label htmlFor="custom-cron">Cron expression</label>
+                <input
+                  id="custom-cron"
+                  type="text"
+                  spellCheck={false}
+                  placeholder="minute hour day-of-month month day-of-week"
+                  value={form.custom}
+                  disabled={!enabled}
+                  onChange={(e) => patchForm({ custom: e.target.value })}
+                />
+                <span className="muted" style={{ fontSize: '12px' }}>
+                  Standard 5-field cron, e.g. <code>0 */6 * * *</code> = every 6 hours.
+                </span>
+              </div>
+            )}
+
+            <p className="muted schedule-next">
+              Schedule: <code>{previewCron || '—'}</code>
+              {schedule?.description ? <> · {schedule.description}</> : null}
+            </p>
 
             <p className="muted schedule-next">
               Next run: <strong>{enabled ? formatRun(schedule?.nextRun ?? null) : 'Disabled'}</strong>

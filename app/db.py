@@ -157,6 +157,7 @@ def seed_settings_if_empty() -> None:
         "scan_enabled": "1" if config.SCAN_ENABLED else "0",
         "scan_hour": str(config.SCAN_HOUR),
         "scan_minute": str(config.SCAN_MINUTE),
+        "scan_cron": f"{config.SCAN_MINUTE} {config.SCAN_HOUR} * * *",
         "smtp_host": config.SMTP_HOST,
         "smtp_port": str(config.SMTP_PORT),
         "smtp_user": config.SMTP_USER,

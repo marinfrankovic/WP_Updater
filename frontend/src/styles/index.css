@@ -458,13 +458,33 @@ code { font-family: var(--mono); font-size: 12px; }
 .schedule-toggle { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; font-size: 13.5px; font-weight: 540; }
 .schedule-toggle input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
 .schedule-field { display: flex; flex-direction: column; gap: 6px; max-width: 220px; }
+.schedule-field:has(.schedule-chips) { max-width: 460px; }
 .schedule-field label { font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
 .schedule-field input[type='time'] {
   padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 9px;
   background: var(--bg-sunken); color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums;
 }
 .schedule-field input[type='time']:disabled { opacity: 0.5; cursor: not-allowed; }
+.schedule-field select {
+  padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 9px;
+  background: var(--bg-sunken); color: var(--text); font-size: 14px; width: 100%; cursor: pointer;
+}
+.schedule-field select:disabled { opacity: 0.5; cursor: not-allowed; }
+.schedule-row { display: flex; flex-wrap: wrap; gap: 14px; }
+.schedule-chips { display: flex; flex-wrap: wrap; gap: 6px; max-width: 420px; }
+.schedule-chip {
+  min-width: 38px; padding: 6px 9px; border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--bg-sunken); color: var(--text-muted); font-size: 12.5px; font-weight: 600;
+  font-variant-numeric: tabular-nums; cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.schedule-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.schedule-chip.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.schedule-chip:disabled { opacity: 0.5; cursor: not-allowed; }
 .schedule-next { margin: 0 !important; font-size: 12.5px; }
+.schedule-next code {
+  padding: 1px 6px; border-radius: 6px; background: var(--bg-sunken);
+  border: 1px solid var(--border); font-size: 12px; font-variant-numeric: tabular-nums;
+}
 .schedule-save { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; }
 
 /* ----------------------------------------------------- notification forms */

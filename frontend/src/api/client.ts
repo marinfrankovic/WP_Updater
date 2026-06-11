@@ -14,6 +14,8 @@ export interface ScanSchedule {
   enabled: boolean;
   hour: number;
   minute: number;
+  cron: string;
+  description: string;
   nextRun: string | null;
   lastRun: string | null;
 }
@@ -117,7 +119,7 @@ export const apiClient = {
 
   getSchedule: () => request<ScanSchedule>('/schedule'),
 
-  setSchedule: (patch: Partial<Pick<ScanSchedule, 'enabled' | 'hour' | 'minute'>>) =>
+  setSchedule: (patch: Partial<Pick<ScanSchedule, 'enabled' | 'hour' | 'minute' | 'cron'>>) =>
     request<{ ok: boolean; schedule: ScanSchedule }>('/schedule', {
       method: 'POST',
       body: JSON.stringify(patch),

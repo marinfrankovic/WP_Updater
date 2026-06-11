@@ -119,10 +119,19 @@ scanning, deploying updates and editing a site.
 
 ## Configuration
 
-Everything is configured with environment variables. The daily scan time,
+Everything is configured with environment variables. The scan schedule,
 SMTP / email reporting and Telegram notifications can also be configured live
 in the **Settings** page (the environment variables below just seed the
 initial values).
+
+The **Settings → Schedule** section offers an advanced scheduler — pick
+**Hourly**, **Daily**, **Several times a day**, **Weekly**, **Monthly**, or a
+**Custom cron** expression. Internally the schedule is stored as a standard
+5-field cron string (`scan_cron` setting); the legacy `WPUPDATER_SCAN_HOUR` /
+`_MINUTE` values are only used as the initial daily default, so upgrading an
+existing install keeps the previous 06:00 daily scan until you change it.
+Running a scan more than once a day is the recommended way to catch updates
+that are published partway through the day.
 
 | Variable | Default | Notes |
 |----------|---------|-------|
@@ -132,8 +141,8 @@ initial values).
 | `WPUPDATER_USER` / `WPUPDATER_PASSWORD` | empty | Optional HTTP basic auth |
 | `WPUPDATER_VERIFY_TLS` | `true` | Set `false` only for self-signed site certs |
 | `WPUPDATER_REQUEST_TIMEOUT` | `30` | Per-request timeout (seconds) |
-| `WPUPDATER_SCAN_ENABLED` | `true` | Enable the daily automatic scan |
-| `WPUPDATER_SCAN_HOUR` / `_MINUTE` | `6` / `0` | Daily scan time (local `TZ`) |
+| `WPUPDATER_SCAN_ENABLED` | `true` | Enable the automatic scheduled scan |
+| `WPUPDATER_SCAN_HOUR` / `_MINUTE` | `6` / `0` | Initial daily scan time (local `TZ`); seeds the default cron. Change the cadence in **Settings → Schedule** |
 | `SMTP_HOST` … `REPORT_RECIPIENTS` | empty | Email reporting (see `.env.example`) |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | empty | Telegram notifications (see `.env.example`) |
 
@@ -161,13 +170,19 @@ Each site uses its own 64-char API key sent in a request header over HTTPS; keep
   details drawer with an expandable list of exactly what needs updating.
 - **Clickable summary tiles** — Core / Plugin / Theme / Sites-with-updates open the
   **Updates** page on the matching tab; **Failed / partial** opens the **Activity Log**.
-- **Manual scans** — "Scan all" and per-site scan.
-- **Scheduled daily scan** at a configurable time (Settings page).
-- **Automatic email reports** via SMTP, sent after the scheduled daily scan;
-  configurable in the **Settings** page (or via environment variables), with an
-  optional "only when updates are pending" mode and a **Send test** button.
-- **Telegram notifications** sent after the scheduled scan; configure the bot
-  token and chat ID in the **Settings** page and send a test message.
+- **Manual scans** — "Scan all" and per-site scan. "Scan all" also sends the
+  configured email / Telegram reports just like a scheduled run (honouring the
+  "only when updates are pending" setting), so you get a notification right away.
+- **Advanced scheduled scans** — choose hourly, daily, several times a day,
+  weekly, monthly, or a custom cron expression in the **Settings** page. The
+  Settings page shows a human-readable description and the next run time.
+- **Automatic email reports** via SMTP, sent after every scheduled or "Scan
+  all" run; configurable in the **Settings** page (or via environment
+  variables), with an optional "only when updates are pending" mode and a
+  **Send test** button.
+- **Telegram notifications** sent after every scheduled or "Scan all" run;
+  configure the bot token and chat ID in the **Settings** page and send a test
+  message.
 - Email and Telegram each send **one cumulative message** summarising every
   selected site, and you can choose **per-site** which sites are included from
   the site details drawer.
@@ -230,7 +245,7 @@ thread, no external services.
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET    | `/api/state` | full state: sites, available updates, activity log |
-| GET / POST | `/api/schedule` | read / change the daily scan time + on-off |
+| GET / POST | `/api/schedule` | read / change the scan schedule (cron) + on-off |
 | POST   | `/api/sites` (`name,url,apiKey,group`) | add a site + immediate scan |
 | PATCH  | `/api/sites/<id>` (`name,url,group,apiKey`) | edit site (blank apiKey keeps current) |
 | DELETE | `/api/sites/<id>` | remove a site and its history |
@@ -253,7 +268,7 @@ thread, no external services.
 └────┬───────┘    JSON: versions + updates     └────────────────────┘
      │
      ├─ SQLite (sites, scans, settings)
-     ├─ Scheduler thread → daily scan + email
+     ├─ Scheduler thread → cron-scheduled scan + email/Telegram
      └─ Reports (HTML / Markdown)
 ```
 
