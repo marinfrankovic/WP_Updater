@@ -286,9 +286,14 @@ export function SettingsPage() {
   async function runVulnScan() {
     setVulnScanning(true);
     try {
-      await apiClient.scanVulns();
+      const res = await apiClient.scanVulns();
+      const total = res.state.sites.reduce((n, s) => n + (s.vulnCount || 0), 0);
       refresh();
-      pushToast({ title: 'Vulnerability scan complete', variant: 'success' });
+      pushToast({
+        title: 'Vulnerability scan complete',
+        message: total > 0 ? `${total} known vulnerability(ies) found — see the Sites page.` : 'No known vulnerabilities found.',
+        variant: total > 0 ? 'warning' : 'success',
+      });
     } catch (err) {
       pushToast({ title: 'Vulnerability scan failed', message: String(err), variant: 'error' });
     } finally {

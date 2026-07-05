@@ -1,4 +1,4 @@
-import { Globe, Package, Palette, Pencil, RefreshCw, Trash2, X, Zap } from 'lucide-react';
+import { Globe, Package, Palette, Pencil, RefreshCw, ShieldAlert, ShieldCheck, Trash2, X, Zap } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useApp } from '../state/AppContext';
 import type { UpdateItem } from '../types';
@@ -145,6 +145,64 @@ export function SiteDetailsDrawer() {
                   <div><span className="muted">Last scan</span><strong>{relativeTime(site.lastScanAt)}</strong></div>
                   <div><span className="muted">Last update</span><strong>{relativeTime(site.lastUpdatedAt)}</strong></div>
                   <div><span className="muted">Total updates</span><strong>{site.totalUpdates}</strong></div>
+                </div>
+
+                <div className="drawer__security" style={{ margin: '4px 0 12px' }}>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>Security &amp; health</h4>
+                  <div className="drawer__meta">
+                    <div>
+                      <span className="muted">Site health</span>
+                      {site.health && site.health.status !== 'unknown' ? (
+                        <strong style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              width: 9,
+                              height: 9,
+                              borderRadius: '50%',
+                              background:
+                                site.health.status === 'healthy'
+                                  ? '#2fa84f'
+                                  : site.health.status === 'degraded'
+                                    ? '#e08b0a'
+                                    : '#d23f3f',
+                            }}
+                          />
+                          {site.health.detail || site.health.status}
+                        </strong>
+                      ) : (
+                        <strong className="muted">not checked yet</strong>
+                      )}
+                    </div>
+                    <div>
+                      <span className="muted">Vulnerabilities</span>
+                      {site.vuln && site.vuln.checkedAt ? (
+                        site.vuln.count > 0 ? (
+                          <strong style={{ color: '#d23f3f', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <ShieldAlert size={13} /> {site.vuln.count} known
+                          </strong>
+                        ) : (
+                          <strong style={{ color: '#2fa84f', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <ShieldCheck size={13} /> None · checked {relativeTime(site.vuln.checkedAt)}
+                          </strong>
+                        )
+                      ) : (
+                        <strong className="muted">not scanned</strong>
+                      )}
+                    </div>
+                  </div>
+                  {site.vuln && site.vuln.count > 0 && (
+                    <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12.5 }}>
+                      {site.vuln.findings.map((f, i) => (
+                        <li key={i} style={{ marginBottom: 4 }}>
+                          <strong>{f.name}</strong>
+                          {f.installedVersion ? ` ${f.installedVersion}` : ''} — {f.title || 'Vulnerability'}
+                          {f.fixedIn ? ` · fixed in ${f.fixedIn}` : ' · no fix available'}
+                          {f.cves.length ? ` · ${f.cves.join(', ')}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
 
                 <label className="drawer__toggle">

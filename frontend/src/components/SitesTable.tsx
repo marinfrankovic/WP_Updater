@@ -1,4 +1,4 @@
-import { ExternalLink, Package, Palette, Pencil, RefreshCw, ShieldAlert, Trash2, Zap } from 'lucide-react';
+import { ExternalLink, Package, Palette, Pencil, RefreshCw, ShieldAlert, ShieldCheck, Trash2, Zap } from 'lucide-react';
 import { useApp } from '../state/AppContext';
 import type { Site } from '../types';
 import { relativeTime } from '../utils/format';
@@ -127,6 +127,13 @@ export function SitesTable({ sites }: SitesTableProps) {
                       >
                         <ShieldAlert size={11} /> {site.vulnCount}
                       </span>
+                    ) : site.vuln && site.vuln.checkedAt ? (
+                      <span
+                        title={`No known vulnerabilities · checked ${relativeTime(site.vuln.checkedAt)}`}
+                        style={{ color: '#2fa84f', display: 'inline-flex', alignItems: 'center' }}
+                      >
+                        <ShieldCheck size={13} />
+                      </span>
                     ) : null}
                     {site.health && site.health.status !== 'unknown' ? (
                       <span
@@ -145,7 +152,7 @@ export function SitesTable({ sites }: SitesTableProps) {
                         }}
                       />
                     ) : null}
-                    {!site.vulnCount && (!site.health || site.health.status === 'unknown') ? (
+                    {!site.vulnCount && !(site.vuln && site.vuln.checkedAt) && (!site.health || site.health.status === 'unknown') ? (
                       <span className="muted">—</span>
                     ) : null}
                   </div>

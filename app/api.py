@@ -81,6 +81,11 @@ def _serialize_site(site: Dict[str, Any], scan: Optional[Dict[str, Any]]) -> Dic
         "selected": False,
         "oldestPendingDays": max(ages) if ages else None,
         "vulnCount": int(vulns.get("count") or 0),
+        "vuln": {
+            "checkedAt": vulns.get("checkedAt"),
+            "count": int(vulns.get("count") or 0),
+            "findings": vulns.get("findings") or [],
+        },
         "health": health.get_health(site["id"]),
     }
 

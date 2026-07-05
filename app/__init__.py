@@ -6,4 +6,4 @@ updates, stores scan history, sends email reports, and can trigger updates or
 toggle auto-updates per site.
 """
 
-__version__ = "1.5.1"
+__version__ = "1.5.2"

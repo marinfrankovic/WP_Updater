@@ -191,8 +191,11 @@ Each site uses its own 64-char API key sent in a request header over HTTPS; keep
   installed core, plugin and theme versions against the
   [WPScan](https://wpscan.com/api) vulnerability database and flags
   known-vulnerable versions with a red shield badge on the **Sites** page.
-  Lookups are cached per slug (default 24h) to respect the free tier's ~25
-  requests/day budget. Add a token and enable it under **Settings → Security**.
+  A **green shield** means the site was scanned and is clean; open a site's
+  details drawer to see the last-checked time and, when present, the exact
+  findings (title, installed → fixed-in version, CVE IDs). Run a scan on demand
+  with **Settings → Security → Scan vulnerabilities now**. Lookups are cached per
+  slug (default 24h) to respect the free tier's ~25 requests/day budget.
 - **Post-update health check** — after applying updates WP Updater fetches the
   site's public home page and flags it if it returns a 5xx or a WordPress
   "critical error" (a coloured health dot appears on the **Sites** page and a

@@ -39,6 +39,24 @@ export interface SiteHealth {
   detail: string | null;
 }
 
+/** A single vulnerability affecting an installed component. */
+export interface VulnFinding {
+  type: string;
+  slug: string;
+  name: string;
+  installedVersion: string | null;
+  title: string | null;
+  fixedIn: string | null;
+  cves: string[];
+}
+
+/** Per-site vulnerability scan result. */
+export interface SiteVulnInfo {
+  checkedAt: string | null;
+  count: number;
+  findings: VulnFinding[];
+}
+
 export interface Site {
   id: string;
   name: string;
@@ -63,6 +81,8 @@ export interface Site {
   oldestPendingDays?: number | null;
   /** Number of known vulnerabilities affecting installed versions. */
   vulnCount?: number;
+  /** Full vulnerability scan result (checked time + findings). */
+  vuln?: SiteVulnInfo | null;
   /** Latest post-update health check result. */
   health?: SiteHealth | null;
 }
