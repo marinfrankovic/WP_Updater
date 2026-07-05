@@ -7,7 +7,8 @@ FROM node:22-slim AS webui
 WORKDIR /build
 # Install deps first for better layer caching.
 COPY frontend/package.json frontend/package-lock.json* ./frontend/
-RUN cd frontend && npm install
+# Use `npm ci` for reproducible installs straight from the committed lockfile.
+RUN cd frontend && npm ci
 # Build the SPA. vite.config.ts emits to ../app/webui (i.e. /build/app/webui).
 COPY frontend ./frontend
 RUN cd frontend && npm run build
