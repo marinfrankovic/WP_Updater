@@ -39,6 +39,37 @@ export interface TelegramSettings {
   tokenSet: boolean;
 }
 
+export interface SecuritySettings {
+  enabled: boolean;
+  cacheTtlHours: number;
+  tokenSet: boolean;
+}
+
+export interface DigestSettings {
+  enabled: boolean;
+  cron: string;
+  description: string;
+  channels: string;
+}
+
+export interface VulnFinding {
+  type: string;
+  slug: string;
+  name: string;
+  installedVersion: string | null;
+  title: string | null;
+  fixedIn: string | null;
+  cves: string[];
+}
+
+export interface SiteVulns {
+  siteId: string;
+  siteName: string;
+  checkedAt: string | null;
+  count: number;
+  findings: VulnFinding[];
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -156,4 +187,32 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify(override ?? {}),
     }),
+
+  getSecurity: () => request<SecuritySettings>('/security'),
+
+  setSecurity: (
+    patch: Partial<Omit<SecuritySettings, 'tokenSet'>> & { token?: string },
+  ) =>
+    request<{ ok: boolean; security: SecuritySettings }>('/security', {
+      method: 'POST',
+      body: JSON.stringify(patch),
+    }),
+
+  scanVulns: () => request<{ ok: boolean; state: ServerState }>('/vulns/scan', { method: 'POST' }),
+
+  getVulns: () => request<{ sites: SiteVulns[] }>('/vulns'),
+
+  healthCheck: (id: string) =>
+    request<{ ok: boolean; state: ServerState }>(`/sites/${id}/health`, { method: 'POST' }),
+
+  getDigest: () => request<DigestSettings>('/digest'),
+
+  setDigest: (patch: Partial<Pick<DigestSettings, 'enabled' | 'cron' | 'channels'>>) =>
+    request<{ ok: boolean; digest: DigestSettings }>('/digest', {
+      method: 'POST',
+      body: JSON.stringify(patch),
+    }),
+
+  testDigest: () =>
+    request<{ ok: boolean; message: string }>('/digest/test', { method: 'POST' }),
 };

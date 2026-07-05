@@ -1,4 +1,4 @@
-import { ExternalLink, Package, Palette, Pencil, RefreshCw, Trash2, Zap } from 'lucide-react';
+import { ExternalLink, Package, Palette, Pencil, RefreshCw, ShieldAlert, Trash2, Zap } from 'lucide-react';
 import { useApp } from '../state/AppContext';
 import type { Site } from '../types';
 import { relativeTime } from '../utils/format';
@@ -55,6 +55,7 @@ export function SitesTable({ sites }: SitesTableProps) {
             <th className="col-num">Plugins</th>
             <th className="col-num">Themes</th>
             <th className="col-num">Total</th>
+            <th>Security</th>
             <th>Last scan</th>
             <th>Status</th>
             <th className="col-actions">Actions</th>
@@ -116,6 +117,38 @@ export function SitesTable({ sites }: SitesTableProps) {
                   ) : (
                     <span className="muted">0</span>
                   )}
+                </td>
+                <td>
+                  <div className="row-actions" style={{ gap: 6 }}>
+                    {site.vulnCount && site.vulnCount > 0 ? (
+                      <span
+                        className="badge badge--danger"
+                        title={`${site.vulnCount} known vulnerability(ies) affecting installed versions`}
+                      >
+                        <ShieldAlert size={11} /> {site.vulnCount}
+                      </span>
+                    ) : null}
+                    {site.health && site.health.status !== 'unknown' ? (
+                      <span
+                        title={`Site health: ${site.health.detail || site.health.status}`}
+                        style={{
+                          display: 'inline-block',
+                          width: 9,
+                          height: 9,
+                          borderRadius: '50%',
+                          background:
+                            site.health.status === 'healthy'
+                              ? '#2fa84f'
+                              : site.health.status === 'degraded'
+                                ? '#e08b0a'
+                                : '#d23f3f',
+                        }}
+                      />
+                    ) : null}
+                    {!site.vulnCount && (!site.health || site.health.status === 'unknown') ? (
+                      <span className="muted">—</span>
+                    ) : null}
+                  </div>
                 </td>
                 <td className="muted">{relativeTime(site.lastScanAt)}</td>
                 <td><StatusBadge status={site.status} /></td>

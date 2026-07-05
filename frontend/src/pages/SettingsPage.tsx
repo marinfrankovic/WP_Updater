@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, Mail, MessageCircle, Moon, RefreshCw, Save, Send, Sun } from 'lucide-react';
+import { CalendarClock, Mail, MessageCircle, Moon, Newspaper, RefreshCw, Save, Send, ShieldAlert, Sun } from 'lucide-react';
 import { useApp } from '../state/AppContext';
-import { apiClient, type EmailSettings, type ScanSchedule, type TelegramSettings } from '../api/client';
+import {
+  apiClient,
+  type DigestSettings,
+  type EmailSettings,
+  type ScanSchedule,
+  type SecuritySettings,
+  type TelegramSettings,
+} from '../api/client';
 import {
   cronToForm,
   formToCron,
@@ -31,7 +38,7 @@ const FREQUENCY_OPTIONS: { value: ScanFrequency; label: string }[] = [
 ];
 
 export function SettingsPage() {
-  const { state, setTheme, pushToast } = useApp();
+  const { state, setTheme, pushToast, refresh } = useApp();
 
   // -------------------------------------------------------------- schedule
   const [schedule, setSchedule] = useState<ScanSchedule | null>(null);
@@ -68,10 +75,27 @@ export function SettingsPage() {
   const [tgSaving, setTgSaving] = useState(false);
   const [tgTesting, setTgTesting] = useState(false);
 
+  // -------------------------------------------------------------- security
+  const [security, setSecurity] = useState<SecuritySettings | null>(null);
+  const [secForm, setSecForm] = useState({ enabled: false, cacheTtlHours: 24, token: '' });
+  const [secSaving, setSecSaving] = useState(false);
+  const [vulnScanning, setVulnScanning] = useState(false);
+
+  // ---------------------------------------------------------------- digest
+  const [digest, setDigest] = useState<DigestSettings | null>(null);
+  const [digestForm, setDigestForm] = useState({
+    enabled: false,
+    cron: '0 8 * * 1',
+    email: true,
+    telegram: true,
+  });
+  const [digestSaving, setDigestSaving] = useState(false);
+  const [digestTesting, setDigestTesting] = useState(false);
+
   useEffect(() => {
     let active = true;
-    Promise.all([apiClient.getSchedule(), apiClient.getEmail(), apiClient.getTelegram()])
-      .then(([s, e, t]) => {
+    Promise.all([apiClient.getSchedule(), apiClient.getEmail(), apiClient.getTelegram(), apiClient.getSecurity(), apiClient.getDigest()])
+      .then(([s, e, t, sec, dig]) => {
         if (!active) return;
         setSchedule(s);
         setEnabled(s.enabled);
@@ -96,6 +120,18 @@ export function SettingsPage() {
           chatId: t.chatId,
           onlyWhenUpdates: t.onlyWhenUpdates,
           token: '',
+        });
+
+        setSecurity(sec);
+        setSecForm({ enabled: sec.enabled, cacheTtlHours: sec.cacheTtlHours, token: '' });
+
+        setDigest(dig);
+        const chans = (dig.channels || '').split(',').map((c) => c.trim());
+        setDigestForm({
+          enabled: dig.enabled,
+          cron: dig.cron || '0 8 * * 1',
+          email: chans.includes('email'),
+          telegram: chans.includes('telegram'),
         });
       })
       .catch((err) => {
@@ -225,6 +261,70 @@ export function SettingsPage() {
       pushToast({ title: 'Test message failed', message: String(err), variant: 'error' });
     } finally {
       setTgTesting(false);
+    }
+  }
+
+  async function saveSecurity() {
+    setSecSaving(true);
+    try {
+      const patch: Partial<Omit<SecuritySettings, 'tokenSet'>> & { token?: string } = {
+        enabled: secForm.enabled,
+        cacheTtlHours: secForm.cacheTtlHours,
+      };
+      if (secForm.token.trim()) patch.token = secForm.token.trim();
+      const res = await apiClient.setSecurity(patch);
+      setSecurity(res.security);
+      setSecForm((f) => ({ ...f, token: '' }));
+      pushToast({ title: 'Security settings saved', variant: 'success' });
+    } catch (err) {
+      pushToast({ title: 'Could not save security settings', message: String(err), variant: 'error' });
+    } finally {
+      setSecSaving(false);
+    }
+  }
+
+  async function runVulnScan() {
+    setVulnScanning(true);
+    try {
+      await apiClient.scanVulns();
+      refresh();
+      pushToast({ title: 'Vulnerability scan complete', variant: 'success' });
+    } catch (err) {
+      pushToast({ title: 'Vulnerability scan failed', message: String(err), variant: 'error' });
+    } finally {
+      setVulnScanning(false);
+    }
+  }
+
+  async function saveDigest() {
+    const channels = [digestForm.email ? 'email' : '', digestForm.telegram ? 'telegram' : '']
+      .filter(Boolean)
+      .join(',');
+    setDigestSaving(true);
+    try {
+      const res = await apiClient.setDigest({
+        enabled: digestForm.enabled,
+        cron: digestForm.cron.trim(),
+        channels,
+      });
+      setDigest(res.digest);
+      pushToast({ title: 'Digest settings saved', message: res.digest.description, variant: 'success' });
+    } catch (err) {
+      pushToast({ title: 'Could not save digest settings', message: String(err), variant: 'error' });
+    } finally {
+      setDigestSaving(false);
+    }
+  }
+
+  async function sendTestDigest() {
+    setDigestTesting(true);
+    try {
+      const res = await apiClient.testDigest();
+      pushToast({ title: 'Digest sent', message: res.message, variant: 'success' });
+    } catch (err) {
+      pushToast({ title: 'Digest test failed', message: String(err), variant: 'error' });
+    } finally {
+      setDigestTesting(false);
     }
   }
 
@@ -661,11 +761,153 @@ export function SettingsPage() {
       </section>
 
       <section className="card settings-card">
-        <h2>Scope</h2>
+        <h2 className="settings-card__title">
+          <ShieldAlert size={18} /> Security (vulnerability scanning)
+        </h2>
         <p className="muted">
-          This dashboard is intentionally focused on updating WordPress core, plugins and themes. Security scanning, uptime
-          and backups are out of scope for this version.
+          Cross-references your installed core, plugin and theme versions against the{' '}
+          <a href="https://wpscan.com/api" target="_blank" rel="noreferrer">WPScan</a> vulnerability database and flags
+          known-vulnerable versions on the Sites page. A free WPScan API token allows ~25 requests/day; results are cached
+          to stay within that budget.
         </p>
+
+        {loading ? (
+          <p className="muted">
+            <RefreshCw size={16} className="spin" /> Loading…
+          </p>
+        ) : (
+          <div className="schedule-form">
+            <label className="schedule-toggle">
+              <input
+                type="checkbox"
+                checked={secForm.enabled}
+                onChange={(e) => setSecForm({ ...secForm, enabled: e.target.checked })}
+              />
+              <span>Enable vulnerability scanning</span>
+            </label>
+
+            <div className="settings-grid">
+              <div className="schedule-field">
+                <label htmlFor="wpscan-token">
+                  WPScan API token {security?.tokenSet ? <span className="muted">(set — leave blank to keep)</span> : null}
+                </label>
+                <input
+                  id="wpscan-token"
+                  type="password"
+                  autoComplete="new-password"
+                  value={secForm.token}
+                  placeholder={security?.tokenSet ? '••••••••' : 'your WPScan API token'}
+                  onChange={(e) => setSecForm({ ...secForm, token: e.target.value })}
+                />
+              </div>
+              <div className="schedule-field">
+                <label htmlFor="vuln-ttl">Cache lookups for (hours)</label>
+                <input
+                  id="vuln-ttl"
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={secForm.cacheTtlHours}
+                  onChange={(e) =>
+                    setSecForm({ ...secForm, cacheTtlHours: Number.parseInt(e.target.value, 10) || 24 })
+                  }
+                />
+              </div>
+            </div>
+
+            <button className="btn btn--primary schedule-save" onClick={saveSecurity} disabled={secSaving}>
+              {secSaving ? <RefreshCw size={16} className="spin" /> : <Save size={16} />}
+              {secSaving ? 'Saving…' : 'Save security settings'}
+            </button>
+
+            <div className="settings-test">
+              <button
+                className="btn btn--ghost"
+                onClick={runVulnScan}
+                disabled={vulnScanning || !security?.enabled}
+                title={security?.enabled ? 'Scan all sites for vulnerabilities now' : 'Enable and save a token first'}
+              >
+                {vulnScanning ? <RefreshCw size={16} className="spin" /> : <ShieldAlert size={16} />}
+                {vulnScanning ? 'Scanning…' : 'Scan vulnerabilities now'}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="card settings-card">
+        <h2 className="settings-card__title">
+          <Newspaper size={18} /> Weekly digest
+        </h2>
+        <p className="muted">
+          A periodic roll-up email/Telegram message: pending updates per site, how long they have been outstanding, known
+          vulnerabilities, site health and how many updates were applied recently.
+        </p>
+
+        {loading ? (
+          <p className="muted">
+            <RefreshCw size={16} className="spin" /> Loading…
+          </p>
+        ) : (
+          <div className="schedule-form">
+            <label className="schedule-toggle">
+              <input
+                type="checkbox"
+                checked={digestForm.enabled}
+                onChange={(e) => setDigestForm({ ...digestForm, enabled: e.target.checked })}
+              />
+              <span>Send a periodic digest</span>
+            </label>
+
+            <div className="schedule-field">
+              <label htmlFor="digest-cron">Schedule (cron)</label>
+              <input
+                id="digest-cron"
+                type="text"
+                spellCheck={false}
+                value={digestForm.cron}
+                placeholder="0 8 * * 1"
+                onChange={(e) => setDigestForm({ ...digestForm, cron: e.target.value })}
+              />
+              <span className="muted" style={{ fontSize: '12px' }}>
+                Standard 5-field cron. Default <code>0 8 * * 1</code> = Mondays at 08:00.
+                {digest?.description ? <> · {digest.description}</> : null}
+              </span>
+            </div>
+
+            <div className="schedule-field">
+              <label>Channels</label>
+              <label className="schedule-toggle">
+                <input
+                  type="checkbox"
+                  checked={digestForm.email}
+                  onChange={(e) => setDigestForm({ ...digestForm, email: e.target.checked })}
+                />
+                <span>Email (uses the SMTP settings + recipients above)</span>
+              </label>
+              <label className="schedule-toggle">
+                <input
+                  type="checkbox"
+                  checked={digestForm.telegram}
+                  onChange={(e) => setDigestForm({ ...digestForm, telegram: e.target.checked })}
+                />
+                <span>Telegram</span>
+              </label>
+            </div>
+
+            <button className="btn btn--primary schedule-save" onClick={saveDigest} disabled={digestSaving}>
+              {digestSaving ? <RefreshCw size={16} className="spin" /> : <Save size={16} />}
+              {digestSaving ? 'Saving…' : 'Save digest settings'}
+            </button>
+
+            <div className="settings-test">
+              <button className="btn btn--ghost" onClick={sendTestDigest} disabled={digestTesting}>
+                {digestTesting ? <RefreshCw size={16} className="spin" /> : <Send size={16} />}
+                {digestTesting ? 'Sending…' : 'Send digest now'}
+              </button>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );

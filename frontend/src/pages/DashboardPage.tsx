@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Globe, Package, Palette, RefreshCw, Server, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, Globe, Package, Palette, Server, Zap } from 'lucide-react';
 import { useApp } from '../state/AppContext';
 import { buildSummary } from '../state/selectors';
 import { SummaryCard } from '../components/SummaryCard';
@@ -8,7 +8,7 @@ import { EmptyState } from '../components/EmptyState';
 import { relativeTime } from '../utils/format';
 
 export function DashboardPage() {
-  const { state, setRoute, setUpdatesTab, scanAll } = useApp();
+  const { state, setRoute, setUpdatesTab } = useApp();
   const summary = buildSummary(state.sites, state.activity);
 
   const attention = [...state.sites]
@@ -28,9 +28,6 @@ export function DashboardPage() {
           <h1>Dashboard</h1>
           <p className="page__sub">Update overview across {summary.totalSites} WordPress sites · last scan {relativeTime(summary.lastScanAt)}</p>
         </div>
-        <button className="btn btn--ghost" onClick={scanAll}>
-          <RefreshCw size={15} /> Scan all
-        </button>
       </div>
 
       <div className="summary-grid">

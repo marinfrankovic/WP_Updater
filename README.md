@@ -2,8 +2,9 @@
 
 A small, self-hosted, **MainWP-style** dashboard that scans the WordPress sites
 you run and reports available **core, plugin, and theme updates** — with a simple
-web GUI, scheduled scans, email reports, per-site **auto-update** toggles, and
-optional one-click "update all".
+web GUI, scheduled scans, email/Telegram reports, per-site **auto-update** toggles,
+optional one-click "update all", **WPScan vulnerability flagging**, **post-update
+health checks**, **pending-update age tracking**, and an optional **weekly digest**.
 
 No SaaS, no per-site fees, no SSH into the sites required — the dashboard talks to
 each site over HTTPS using a per-site API key.
@@ -186,6 +187,25 @@ Each site uses its own 64-char API key sent in a request header over HTTPS; keep
 - Email and Telegram each send **one cumulative message** summarising every
   selected site, and you can choose **per-site** which sites are included from
   the site details drawer.
+- **Vulnerability scanning (WPScan)** — optionally cross-references each site's
+  installed core, plugin and theme versions against the
+  [WPScan](https://wpscan.com/api) vulnerability database and flags
+  known-vulnerable versions with a red shield badge on the **Sites** page.
+  Lookups are cached per slug (default 24h) to respect the free tier's ~25
+  requests/day budget. Add a token and enable it under **Settings → Security**.
+- **Post-update health check** — after applying updates WP Updater fetches the
+  site's public home page and flags it if it returns a 5xx or a WordPress
+  "critical error" (a coloured health dot appears on the **Sites** page and a
+  Telegram alert is sent). Note: automatic rollback is **not** performed — that
+  needs a backup mechanism the connector does not provide — so restore from your
+  own backups if a site breaks.
+- **Pending-update age** — the **Updates** page shows how long each update has
+  been outstanding (e.g. `9d`), and the oldest pending age is tracked per site,
+  so long-ignored updates stand out.
+- **Weekly digest** — an optional periodic roll-up (email and/or Telegram) with
+  pending updates per site, oldest pending age, known vulnerabilities, site
+  health and how many updates were applied in the last 7 days. Configure the
+  schedule and channels under **Settings → Weekly digest**.
 - **HTML / Markdown reports** available at `/report.html` and `/report.md`.
 - **Per-site auto-update** checkbox (real WordPress auto-updates, not just a flag).
 - **One-click "Update all"** per site, and **per-item updates** — update a single

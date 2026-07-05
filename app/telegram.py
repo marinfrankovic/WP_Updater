@@ -134,3 +134,19 @@ def send_report(force: bool = False) -> Tuple[bool, str]:
 
 def send_test(chat_id: str, token: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     return send_message(chat_id, "✅ Test message from WP Updater.", token=token)
+
+
+def send_digest(force: bool = False) -> Tuple[bool, str]:
+    """Send the weekly digest summary to the configured chat."""
+    from . import reports  # local import keeps module load order simple
+    settings = db.get_settings_dict()
+    if settings.get("digest_enabled", "0") != "1" and not force:
+        return False, "Digest is disabled."
+    if not telegram_ready():
+        return False, "Telegram is not configured."
+    text = reports.build_digest_text()
+    cfg = _config()
+    ok, err = send_message(cfg["chat_id"], text)
+    if ok:
+        return True, "Digest sent."
+    return False, f"Telegram send failed: {err}"

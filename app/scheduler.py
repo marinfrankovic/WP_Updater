@@ -49,6 +49,24 @@ def run_scan_cycle(send_email: bool = True) -> dict:
             _state["running"] = False
 
 
+def send_digest() -> None:
+    """Send the weekly digest over the configured channels (best-effort)."""
+    settings = db.get_settings_dict()
+    if settings.get("digest_enabled", "0") != "1":
+        return
+    channels = {c.strip() for c in (settings.get("digest_channels", "email,telegram") or "").split(",") if c.strip()}
+    if "email" in channels:
+        try:
+            emailer.send_digest(force=True)
+        except Exception:  # noqa: BLE001 - never let a notifier kill the digest
+            pass
+    if "telegram" in channels:
+        try:
+            telegram.send_digest(force=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 _DOW_NAMES = {
     "sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6,
 }
@@ -250,37 +268,64 @@ def _seconds_until_next(expr: str) -> Optional[float]:
 
 def _loop() -> None:
     last_fired_minute: Optional[datetime] = None
+    last_digest_minute: Optional[datetime] = None
     while not _stop.is_set():
         _wake.clear()
         settings = db.get_settings_dict()
-        if settings.get("scan_enabled", "1") != "1":
-            # Sleep until woken by a settings change (or shutdown).
+        scan_on = settings.get("scan_enabled", "1") == "1"
+        digest_on = settings.get("digest_enabled", "0") == "1"
+        digest_expr = (settings.get("digest_cron") or "0 8 * * 1").strip()
+
+        waits = [3600.0]
+        scan_expr: Optional[str] = None
+        if scan_on:
+            scan_expr = _effective_cron(settings)
+            ws = _seconds_until_next(scan_expr)  # also updates _state["next_run"]
+            if ws is not None:
+                waits.append(ws)
+            else:
+                scan_expr = None
+        else:
             _state["next_run"] = None
+        if digest_on:
+            wd = next_cron_after(digest_expr, datetime.now())
+            if wd is not None:
+                waits.append(max(0.0, (wd - datetime.now()).total_seconds()))
+
+        if scan_expr is None and not digest_on:
+            # Nothing scheduled; wait for a settings change (or shutdown).
             _wake.wait(3600)
             continue
-        expr = _effective_cron(settings)
-        wait_s = _seconds_until_next(expr)
-        if wait_s is None:
-            # Unparseable expression; wait for a corrected schedule.
-            _wake.wait(3600)
-            continue
-        # Wake at least once an hour to re-read the schedule, or immediately if
-        # the schedule was changed via the settings API.
-        woke = _wake.wait(min(wait_s, 3600))
+
+        woke = _wake.wait(min(waits))
         if _stop.is_set():
             break
         if woke:
-            # Settings changed -> recompute next run from the top of the loop.
+            # Settings changed -> recompute everything from the top.
             continue
-        if wait_s <= 3600:
-            this_minute = datetime.now().replace(second=0, microsecond=0)
-            if this_minute != last_fired_minute:
-                last_fired_minute = this_minute
-                try:
-                    run_scan_cycle(send_email=True)
-                except Exception:  # noqa: BLE001 - never let the scheduler thread die
-                    pass
-            _stop.wait(60)  # avoid double-trigger within the same minute
+
+        this_minute = datetime.now().replace(second=0, microsecond=0)
+        if scan_expr:
+            try:
+                if _cron_matches(this_minute, _parse_cron(scan_expr)) and this_minute != last_fired_minute:
+                    last_fired_minute = this_minute
+                    try:
+                        run_scan_cycle(send_email=True)
+                    except Exception:  # noqa: BLE001 - never let the scheduler thread die
+                        pass
+            except Exception:  # noqa: BLE001
+                pass
+        if digest_on:
+            try:
+                if _cron_matches(this_minute, _parse_cron(digest_expr)) and this_minute != last_digest_minute:
+                    last_digest_minute = this_minute
+                    try:
+                        send_digest()
+                    except Exception:  # noqa: BLE001
+                        pass
+            except Exception:  # noqa: BLE001
+                pass
+        _stop.wait(2)  # avoid re-evaluating the same minute repeatedly
 
 
 def start() -> None:

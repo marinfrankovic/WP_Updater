@@ -1,4 +1,4 @@
-import { Globe, PencilLine, PlusCircle, RefreshCw, Zap } from 'lucide-react';
+import { Globe, PencilLine, PlusCircle, RefreshCw, ShieldAlert, Zap } from 'lucide-react';
 
 export function HelpPage() {
   return (
@@ -93,6 +93,22 @@ export function HelpPage() {
                 API key blank to keep the current one. Use <em>Cancel</em> to discard. The <em>auto-update</em> toggle in
                 the pane lets WordPress install updates on its own, and failed actions in the <em>Activity log</em> can be
                 re-run with <em>Retry</em>.
+              </p>
+            </div>
+          </li>
+          <li className="help-step">
+            <span className="help-step__icon"><ShieldAlert size={16} /></span>
+            <div>
+              <strong>7. Security, health &amp; digest</strong>
+              <p>
+                Under <em>Settings → Security</em>, add a free{' '}
+                <a href="https://wpscan.com/api" target="_blank" rel="noreferrer noopener">WPScan</a> API token to
+                flag <em>known-vulnerable</em> plugin/theme/core versions (a red shield badge appears on the
+                {' '}<em>Sites</em> page). After any update, WP Updater runs a <em>health check</em> on the site's home
+                page and shows a coloured dot (and sends a Telegram alert) if it returns a 5xx or a WordPress critical
+                error — note it does <em>not</em> auto-roll-back, so restore from your own backups if needed. The
+                {' '}<em>Updates</em> page shows how long each update has been <em>pending</em>, and
+                {' '}<em>Settings → Weekly digest</em> can email/Telegram a periodic roll-up of all of the above.
               </p>
             </div>
           </li>

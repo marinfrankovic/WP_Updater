@@ -110,3 +110,20 @@ def _collect_site_admin_emails() -> List[str]:
 
 def send_test(recipient: str) -> Tuple[bool, Optional[str]]:
     return _send_raw("WP Updater — test email", "<p>This is a test email from WP Updater.</p>", [recipient])
+
+
+def send_digest(force: bool = False) -> Tuple[bool, str]:
+    """Send the weekly digest to the dashboard recipients."""
+    settings = db.get_settings_dict()
+    if settings.get("digest_enabled", "0") != "1" and not force:
+        return False, "Digest is disabled."
+    if not smtp_ready():
+        return False, "SMTP is not configured."
+    recipients = [r for r in (settings.get("report_recipients", "") or "").split(",") if r.strip()]
+    if not recipients:
+        return False, "No recipients configured."
+    html_body = reports.build_digest_html()
+    ok, err = _send_raw("WordPress Weekly Digest", html_body, recipients)
+    if ok:
+        return True, f"Digest sent to {len(recipients)} recipient(s)."
+    return False, f"Send failed: {err}"

@@ -28,7 +28,16 @@ export type ActivityAction =
   | 'update-core'
   | 'update-plugins'
   | 'update-themes'
-  | 'update-all';
+  | 'update-all'
+  | 'health-check';
+
+/** Post-update health of a site's public home page. */
+export interface SiteHealth {
+  status: 'healthy' | 'degraded' | 'down' | 'unknown';
+  httpStatus: number | null;
+  checkedAt: string;
+  detail: string | null;
+}
 
 export interface Site {
   id: string;
@@ -50,6 +59,12 @@ export interface Site {
   selected: boolean;
   /** Progress 0–100 while scanning/updating (UI-only, optional). */
   progress?: number;
+  /** Age (days) of the longest-outstanding pending update, if any. */
+  oldestPendingDays?: number | null;
+  /** Number of known vulnerabilities affecting installed versions. */
+  vulnCount?: number;
+  /** Latest post-update health check result. */
+  health?: SiteHealth | null;
 }
 
 export interface UpdateItem {
@@ -62,6 +77,10 @@ export interface UpdateItem {
   availableVersion: string;
   status: UpdateItemStatus;
   selected: boolean;
+  /** When this update was first observed as pending (ISO), if tracked. */
+  firstSeenAt?: string | null;
+  /** Days the update has been outstanding. */
+  ageDays?: number | null;
 }
 
 export interface ActivityLogEntry {

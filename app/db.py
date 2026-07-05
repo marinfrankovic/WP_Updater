@@ -107,6 +107,27 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_activity_time
                 ON activity(created_at DESC);
+
+            -- Tracks when a still-pending update was FIRST observed, so the UI
+            -- can show how long an update has been outstanding ("pending age").
+            CREATE TABLE IF NOT EXISTS update_seen (
+                site_id       INTEGER NOT NULL,
+                item_key      TEXT NOT NULL,      -- core | plugin:<file> | theme:<stylesheet>
+                available     TEXT,               -- latest available version
+                first_seen_at TEXT NOT NULL,
+                PRIMARY KEY (site_id, item_key),
+                FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+            );
+
+            -- Per-slug vulnerability lookups from the WPScan API, cached to
+            -- respect the free tier's daily request budget.
+            CREATE TABLE IF NOT EXISTS vuln_cache (
+                kind       TEXT NOT NULL,          -- plugin | theme | wordpress
+                slug       TEXT NOT NULL,
+                checked_at TEXT NOT NULL,
+                data       TEXT,                   -- JSON array of vulnerabilities
+                PRIMARY KEY (kind, slug)
+            );
             """
         )
         # ---- lightweight migrations -------------------------------------
@@ -171,6 +192,16 @@ def seed_settings_if_empty() -> None:
         "telegram_chat_id": config.TELEGRAM_CHAT_ID,
         "telegram_only_when_updates": "1" if config.TELEGRAM_ONLY_WHEN_UPDATES else "0",
         "telegram_enabled": "1" if (config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID) else "0",
+        # Security (WPScan vulnerability scanning) — off until a token is added.
+        "wpscan_enabled": "0",
+        "wpscan_api_token": "",
+        "vuln_cache_ttl_hours": "24",
+        # Post-update site health check.
+        "health_check_enabled": "1",
+        # Weekly digest report.
+        "digest_enabled": "0",
+        "digest_cron": "0 8 * * 1",
+        "digest_channels": "email,telegram",
     }
     for k, v in defaults.items():
         if get_setting(k) is None:
@@ -367,3 +398,83 @@ def prune_activity(keep: int = 500) -> None:
 def touch_last_updated(site_id: int) -> None:
     with _lock, get_conn() as conn:
         conn.execute("UPDATE sites SET last_updated_at=? WHERE id=?", (_utcnow(), site_id))
+
+
+# --------------------------------------------------------------------------- #
+# Pending-update age tracking
+# --------------------------------------------------------------------------- #
+def sync_update_seen(site_id: int, current_items: List[tuple]) -> None:
+    """Reconcile the ``update_seen`` rows for a site against the updates it now
+    has pending. ``current_items`` is a list of ``(item_key, available)``.
+
+    An item's ``first_seen_at`` is preserved for as long as it stays pending
+    (even if the available version bumps), so the age reflects how long the site
+    has had *some* outstanding update for that component. Items that are no
+    longer pending are dropped.
+    """
+    now = _utcnow()
+    keys = {k for k, _ in current_items}
+    with _lock, get_conn() as conn:
+        existing = {
+            r["item_key"] for r in conn.execute(
+                "SELECT item_key FROM update_seen WHERE site_id=?", (site_id,)
+            ).fetchall()
+        }
+        for key, available in current_items:
+            if key in existing:
+                conn.execute(
+                    "UPDATE update_seen SET available=? WHERE site_id=? AND item_key=?",
+                    (available, site_id, key),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO update_seen(site_id, item_key, available, first_seen_at) "
+                    "VALUES(?,?,?,?)",
+                    (site_id, key, available, now),
+                )
+        for key in existing - keys:
+            conn.execute(
+                "DELETE FROM update_seen WHERE site_id=? AND item_key=?", (site_id, key)
+            )
+
+
+def get_update_seen_map(site_id: int) -> Dict[str, str]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT item_key, first_seen_at FROM update_seen WHERE site_id=?", (site_id,)
+        ).fetchall()
+        return {r["item_key"]: r["first_seen_at"] for r in rows}
+
+
+# --------------------------------------------------------------------------- #
+# Vulnerability lookup cache
+# --------------------------------------------------------------------------- #
+def get_vuln_cache(kind: str, slug: str, ttl_hours: int) -> Optional[List[Dict[str, Any]]]:
+    """Return cached vulnerabilities for (kind, slug) if fresher than ttl_hours,
+    else None (meaning: caller should query the API)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT checked_at, data FROM vuln_cache WHERE kind=? AND slug=?", (kind, slug)
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        checked = datetime.fromisoformat(row["checked_at"])
+    except (TypeError, ValueError):
+        return None
+    age = (datetime.now(timezone.utc) - checked).total_seconds()
+    if age > max(0, ttl_hours) * 3600:
+        return None
+    try:
+        return json.loads(row["data"]) if row["data"] else []
+    except (TypeError, ValueError):
+        return []
+
+
+def set_vuln_cache(kind: str, slug: str, data: List[Dict[str, Any]]) -> None:
+    with _lock, get_conn() as conn:
+        conn.execute(
+            "INSERT INTO vuln_cache(kind, slug, checked_at, data) VALUES(?,?,?,?) "
+            "ON CONFLICT(kind, slug) DO UPDATE SET checked_at=excluded.checked_at, data=excluded.data",
+            (kind, slug, _utcnow(), json.dumps(data or [])),
+        )

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-from . import db
+from . import db, vuln
 from .config import config
 
 _API_BASE = "/wp-json/wpupdater/v1"
@@ -133,6 +133,14 @@ def scan_site(site: Dict[str, Any]) -> Dict[str, Any]:
             db.set_setting(f"site_admin_email_{site['id']}", admin_email)
         # Reconcile desired auto-update state with the site, if it drifted.
         _reconcile_auto_update(site, payload)
+        # Track how long each pending update has been outstanding.
+        _track_pending_age(site, payload)
+        # Best-effort vulnerability lookup (cached; no-op unless configured).
+        try:
+            if vuln.enabled():
+                vuln.scan_site(site, payload)
+        except Exception:  # noqa: BLE001 - vuln scan must never break a scan
+            pass
     else:
         db.record_scan(site["id"], "error", error=error)
     db.prune_scans(site["id"])
@@ -143,6 +151,29 @@ def scan_site(site: Dict[str, Any]) -> Dict[str, Any]:
         "error": error,
         "counts": payload.get("counts", {}) if ok else {},
     }
+
+
+def _track_pending_age(site: Dict[str, Any], payload: Dict[str, Any]) -> None:
+    """Record/refresh the first-seen timestamp of every still-pending update so
+    the dashboard can show how long each update has been outstanding."""
+    current: List[Tuple[str, Optional[str]]] = []
+    core = payload.get("core_update")
+    if core:
+        current.append(("core", core.get("available")))
+    for p in payload.get("plugins", []) or []:
+        if p.get("update"):
+            key = p.get("file") or p.get("name")
+            if key:
+                current.append((f"plugin:{key}", p.get("available")))
+    for t in payload.get("themes", []) or []:
+        if t.get("update"):
+            key = t.get("stylesheet") or t.get("name")
+            if key:
+                current.append((f"theme:{key}", t.get("available")))
+    try:
+        db.sync_update_seen(site["id"], current)
+    except Exception:  # noqa: BLE001 - never break a scan over age tracking
+        pass
 
 
 def _reconcile_auto_update(site: Dict[str, Any], payload: Dict[str, Any]) -> None:

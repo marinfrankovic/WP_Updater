@@ -61,6 +61,8 @@ export function actionLabel(action: ActivityAction): string {
       return 'Update themes';
     case 'update-all':
       return 'Update all';
+    case 'health-check':
+      return 'Health check';
     default:
       return action;
   }

@@ -225,6 +225,18 @@ export function UpdatesTable() {
                             <td className="col-ver">
                               <code>{u.currentVersion}</code> → <code className="next">{u.availableVersion}</code>
                             </td>
+                            <td className="col-age">
+                              {typeof u.ageDays === 'number' ? (
+                                <span
+                                  className={`pill ${u.ageDays >= 14 ? 'pill--warning' : 'pill--neutral'}`}
+                                  title={u.firstSeenAt ? `First seen ${new Date(u.firstSeenAt).toLocaleString()}` : undefined}
+                                >
+                                  {u.ageDays === 0 ? 'new' : `${u.ageDays}d`}
+                                </span>
+                              ) : (
+                                <span className="muted">—</span>
+                              )}
+                            </td>
                             <td className="col-status"><StatusBadge status={u.status} /></td>
                             <td className="col-action">
                               <button

@@ -6,13 +6,26 @@ the same optional HTTP basic auth as the rest of the dashboard.
 """
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, jsonify, request
 
-from . import db, emailer, scanner, scheduler, telegram
+from . import db, emailer, health, scanner, scheduler, telegram, vuln
 
 api = Blueprint("api", __name__, url_prefix="/api")
+
+
+def _age_days(iso: Optional[str]) -> Optional[int]:
+    if not iso:
+        return None
+    try:
+        dt = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return max(0, int((datetime.now(timezone.utc) - dt).total_seconds() // 86400))
 
 
 def _clean_error(err: Optional[str]) -> Optional[str]:
@@ -45,6 +58,9 @@ def _serialize_site(site: Dict[str, Any], scan: Optional[Dict[str, Any]]) -> Dic
         "themes": scan["count_themes"] if scan and scan["status"] == "ok" else 0,
         "total": scan["count_total"] if scan and scan["status"] == "ok" else 0,
     }
+    seen = db.get_update_seen_map(site["id"])
+    ages = [d for d in (_age_days(v) for v in seen.values()) if d is not None]
+    vulns = vuln.get_findings(site["id"])
     return {
         "id": str(site["id"]),
         "name": site["name"],
@@ -63,6 +79,9 @@ def _serialize_site(site: Dict[str, Any], scan: Optional[Dict[str, Any]]) -> Dic
         "notifyTelegram": bool(site.get("notify_telegram")),
         "group": site.get("grp") or "Ungrouped",
         "selected": False,
+        "oldestPendingDays": max(ages) if ages else None,
+        "vulnCount": int(vulns.get("count") or 0),
+        "health": health.get_health(site["id"]),
     }
 
 
@@ -70,7 +89,12 @@ def _serialize_updates(site: Dict[str, Any], scan: Optional[Dict[str, Any]]) -> 
     if not scan or scan.get("status") != "ok":
         return []
     sid = str(site["id"])
+    seen = db.get_update_seen_map(site["id"])
     items: List[Dict[str, Any]] = []
+
+    def _age(key: str) -> Dict[str, Any]:
+        first = seen.get(key)
+        return {"firstSeenAt": first, "ageDays": _age_days(first)}
 
     core = scan.get("core_update")
     if core:
@@ -78,16 +102,19 @@ def _serialize_updates(site: Dict[str, Any], scan: Optional[Dict[str, Any]]) -> 
             "id": f"{sid}-core",
             "siteId": sid,
             "type": "core",
+            "slug": "",
             "name": "WordPress",
             "currentVersion": core.get("current") or "—",
             "availableVersion": core.get("available") or "—",
             "status": "available",
             "selected": False,
+            **_age("core"),
         })
 
     for p in scan.get("plugins", []) or []:
         if not p.get("update"):
             continue
+        key = p.get("file") or p.get("name")
         items.append({
             "id": f"{sid}-plugin-{p.get('file', p.get('name'))}",
             "siteId": sid,
@@ -98,11 +125,13 @@ def _serialize_updates(site: Dict[str, Any], scan: Optional[Dict[str, Any]]) -> 
             "availableVersion": p.get("available") or "—",
             "status": "available",
             "selected": False,
+            **_age(f"plugin:{key}"),
         })
 
     for t in scan.get("themes", []) or []:
         if not t.get("update"):
             continue
+        key = t.get("stylesheet") or t.get("name")
         items.append({
             "id": f"{sid}-theme-{t.get('stylesheet', t.get('name'))}",
             "siteId": sid,
@@ -113,6 +142,7 @@ def _serialize_updates(site: Dict[str, Any], scan: Optional[Dict[str, Any]]) -> 
             "availableVersion": t.get("available") or "—",
             "status": "available",
             "selected": False,
+            **_age(f"theme:{key}"),
         })
 
     return items
@@ -325,6 +355,28 @@ def _finalize_update(site: Dict[str, Any], action: str, details: List[Dict[str, 
     # dashboard tile (the failed entries stay in the activity log, just resolved).
     if status == "success":
         db.resolve_site_failures(site["id"])
+
+    # Post-update health check: if we applied anything, verify the site still
+    # loads. A broken site is logged and (best-effort) alerted via Telegram.
+    if any_ok and health.enabled():
+        try:
+            hc = health.check_site(site)
+            if hc.get("status") in ("down", "degraded"):
+                db.record_activity(
+                    site["id"], site["name"], "health-check", "failed",
+                    error=f"Post-update health check: {hc.get('detail') or hc.get('status')}",
+                )
+                try:
+                    telegram.send_message(
+                        db.get_setting("telegram_chat_id", "") or "",
+                        f"⚠️ <b>{site['name']}</b> looks unhealthy after an update: "
+                        f"{hc.get('detail') or hc.get('status')}",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception:  # noqa: BLE001 - health check must never break an update
+            pass
+
     return {"ok": any_ok, "status": status, "error": first_err}
 
 
@@ -693,4 +745,136 @@ def test_notifications_route():
     if not ok:
         return jsonify({"error": err or "Send failed"}), 502
     return jsonify({"ok": True, "message": "Test message sent."})
+
+
+# --------------------------------------------------------------------------- #
+# Security — vulnerability scanning (WPScan)
+# --------------------------------------------------------------------------- #
+def _security_payload() -> Dict[str, Any]:
+    s = db.get_settings_dict()
+    try:
+        ttl = int(s.get("vuln_cache_ttl_hours", "24") or 24)
+    except (TypeError, ValueError):
+        ttl = 24
+    return {
+        "enabled": s.get("wpscan_enabled", "0") == "1",
+        "cacheTtlHours": ttl,
+        # Never expose the stored token; only whether one is set.
+        "tokenSet": bool((s.get("wpscan_api_token") or "").strip()),
+    }
+
+
+@api.get("/security")
+def get_security_route():
+    return jsonify(_security_payload())
+
+
+@api.post("/security")
+def set_security_route():
+    data = request.get_json(silent=True) or {}
+    if "enabled" in data:
+        db.set_setting("wpscan_enabled", "1" if data.get("enabled") else "0")
+    if "cacheTtlHours" in data:
+        try:
+            ttl = int(data["cacheTtlHours"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "cacheTtlHours must be a number"}), 400
+        db.set_setting("vuln_cache_ttl_hours", str(max(1, min(720, ttl))))
+    # Token is write-only: only overwrite when a non-empty value is supplied.
+    token = data.get("token")
+    if isinstance(token, str) and token.strip():
+        db.set_setting("wpscan_api_token", token.strip())
+    return jsonify({"ok": True, "security": _security_payload()})
+
+
+@api.post("/vulns/scan")
+def scan_vulns_route():
+    if not vuln.enabled():
+        return jsonify({"error": "Vulnerability scanning is not enabled (add a WPScan API token)."}), 400
+    for site in db.list_sites(enabled_only=True):
+        scan = db.latest_scan(site["id"])
+        if not scan or scan.get("status") != "ok":
+            continue
+        payload = {
+            "wp_version": scan.get("wp_version"),
+            "plugins": scan.get("plugins", []),
+            "themes": scan.get("themes", []),
+        }
+        try:
+            vuln.scan_site(site, payload)
+        except Exception:  # noqa: BLE001 - one site's failure must not abort the run
+            pass
+    return jsonify({"ok": True, "state": _full_state()})
+
+
+@api.get("/vulns")
+def get_vulns_route():
+    out = []
+    for site in db.list_sites():
+        findings = vuln.get_findings(site["id"])
+        out.append({
+            "siteId": str(site["id"]),
+            "siteName": site["name"],
+            "checkedAt": findings.get("checkedAt"),
+            "count": int(findings.get("count") or 0),
+            "findings": findings.get("findings") or [],
+        })
+    return jsonify({"sites": out})
+
+
+@api.post("/sites/<int:site_id>/health")
+def health_check_route(site_id: int):
+    site = db.get_site(site_id)
+    if not site:
+        return jsonify({"error": "not found"}), 404
+    health.check_site(site)
+    return jsonify({"ok": True, "state": _full_state()})
+
+
+# --------------------------------------------------------------------------- #
+# Weekly digest
+# --------------------------------------------------------------------------- #
+def _digest_payload() -> Dict[str, Any]:
+    s = db.get_settings_dict()
+    cron = (s.get("digest_cron") or "0 8 * * 1").strip()
+    return {
+        "enabled": s.get("digest_enabled", "0") == "1",
+        "cron": cron,
+        "description": scheduler.describe_cron(cron),
+        "channels": s.get("digest_channels", "email,telegram") or "",
+    }
+
+
+@api.get("/digest")
+def get_digest_route():
+    return jsonify(_digest_payload())
+
+
+@api.post("/digest")
+def set_digest_route():
+    data = request.get_json(silent=True) or {}
+    if "enabled" in data:
+        db.set_setting("digest_enabled", "1" if data.get("enabled") else "0")
+    if "cron" in data and data["cron"] is not None:
+        cron = str(data["cron"]).strip()
+        ok, err = scheduler.validate_cron(cron)
+        if not ok:
+            return jsonify({"error": f"Invalid cron expression: {err}"}), 400
+        db.set_setting("digest_cron", cron)
+    if "channels" in data:
+        raw = data.get("channels")
+        if isinstance(raw, list):
+            chans = [str(c).strip() for c in raw]
+        else:
+            chans = [c.strip() for c in str(raw or "").split(",")]
+        chans = [c for c in chans if c in ("email", "telegram")]
+        db.set_setting("digest_channels", ",".join(dict.fromkeys(chans)))
+    scheduler.request_reschedule()
+    return jsonify({"ok": True, "digest": _digest_payload()})
+
+
+@api.post("/digest/test")
+def test_digest_route():
+    scheduler.send_digest()
+    return jsonify({"ok": True, "message": "Digest sent (if a channel is configured)."})
 
