@@ -1,4 +1,4 @@
-import { Plus, RefreshCw, Server } from 'lucide-react';
+import { Plus, Server } from 'lucide-react';
 import { useState } from 'react';
 import { useApp } from '../state/AppContext';
 import { filterSitesByQuery } from '../state/selectors';
@@ -7,7 +7,7 @@ import { BulkActionBar } from '../components/BulkActionBar';
 import { EmptyState } from '../components/EmptyState';
 
 export function SitesPage() {
-  const { state, scanAll, addSite } = useApp();
+  const { state, addSite } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: '', url: '', apiKey: '', group: '' });
 
@@ -34,7 +34,6 @@ export function SitesPage() {
           <p className="page__sub">{sites.length} of {state.sites.length} sites</p>
         </div>
         <div className="page__head-actions">
-          <button className="btn btn--ghost" onClick={scanAll}><RefreshCw size={15} /> Scan all</button>
           <button className="btn btn--primary" onClick={() => setShowAdd((v) => !v)}><Plus size={15} /> Add site</button>
         </div>
       </div>

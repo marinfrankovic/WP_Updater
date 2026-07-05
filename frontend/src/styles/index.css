@@ -247,11 +247,16 @@ code { font-family: var(--mono); font-size: 12px; }
 .data-table tbody tr.is-selected { background: var(--accent-soft); }
 .col-check { width: 40px; }
 .col-num { text-align: right; width: 78px; }
-.col-actions { text-align: right; width: 200px; }
-.row-actions { display: inline-flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.col-actions { text-align: right; width: 1%; white-space: nowrap; }
+.row-actions { display: inline-flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .resolved-tag { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; font-size: 12px; font-weight: 600; color: var(--success); border-radius: 7px; background: color-mix(in srgb, var(--success) 14%, transparent); }
 .col-expand { width: 36px; }
 .data-table input[type='checkbox'] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+
+/* Horizontal scroll wrapper so wide tables stay usable on small screens. */
+.table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.card:has(> .data-table) { overflow-x: auto; }
+.data-table--sites { min-width: 780px; }
 
 .link-cell { background: none; border: 0; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 1px; padding: 0; }
 .link-cell__name { font-weight: 580; color: var(--text); font-size: 13.5px; }
@@ -266,7 +271,7 @@ code { font-family: var(--mono); font-size: 12px; }
 .count--warning { color: var(--warning); }
 .count--total { color: var(--text); font-size: 14px; }
 
-.row-actions { display: inline-flex; gap: 6px; justify-content: flex-end; }
+.row-actions { display: inline-flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 
 /* ----------------------------------------------------------------- badge */
 .badge {
