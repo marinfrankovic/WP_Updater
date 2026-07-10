@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Updater Connector
  * Description: Secure REST connector that reports WordPress core/plugin/theme update status to a self-hosted WP Updater dashboard, and (optionally) applies updates or toggles auto-updates on request.
- * Version: 1.3.1
+ * Version: 1.4.0
  * Author: WP Updater
  * License: GPL-2.0-or-later
  *
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 if (!defined('WPUPDATER_VERSION')) {
-    define('WPUPDATER_VERSION', '1.3.1');
+    define('WPUPDATER_VERSION', '1.4.0');
 }
 
 /**
@@ -101,10 +101,21 @@ function wpupdater_load_update_apis() {
 function wpupdater_collect_status() {
     wpupdater_load_update_apis();
 
-    // Force-refresh update transients so the dashboard sees current data.
-    wp_version_check(array(), true);
-    wp_update_plugins();
-    wp_update_themes();
+    // Do NOT force a full outbound update-check on every poll -- that is heavy
+    // on shared hosting (a network round-trip to api.wordpress.org for core +
+    // every plugin/theme) and, at scan frequency, can trip host resource
+    // limits. Force at most once per WPUPDATER_REFRESH_TTL (default 12h);
+    // between forces, rely on WordPress's own cached transients, which
+    // self-throttle (~12h) and only hit the network when genuinely stale.
+    $refresh_ttl  = defined('WPUPDATER_REFRESH_TTL') ? (int) WPUPDATER_REFRESH_TTL : 12 * HOUR_IN_SECONDS;
+    $last_refresh = (int) get_option('wpupdater_last_refresh', 0);
+    $force        = ((time() - $last_refresh) >= $refresh_ttl);
+    wp_version_check(array(), $force);
+    wp_update_plugins(); // self-throttled: no HTTP unless the cache is stale
+    wp_update_themes();  // self-throttled: no HTTP unless the cache is stale
+    if ($force) {
+        update_option('wpupdater_last_refresh', time(), false);
+    }
 
     global $wp_version;
 
@@ -239,6 +250,22 @@ function wpupdater_apply_updates($targets, $only_plugins = array(), $only_themes
         require_once ABSPATH . 'wp-admin/includes/file.php';
     }
 
+    // Prevent overlapping update runs. If another /update request is already
+    // applying updates on this site, refuse instead of running concurrently --
+    // parallel upgrades can corrupt the filesystem/DB and spike host CPU. The
+    // lock auto-expires after the timeout so a crashed run cannot wedge future
+    // updates.
+    if (!class_exists('WP_Upgrader')) {
+        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+    }
+    if (!WP_Upgrader::create_lock('wpupdater_update', 15 * MINUTE_IN_SECONDS)) {
+        return array(
+            'plugins' => array(), 'themes' => array(), 'core' => null,
+            'errors'  => array('busy: another update run is already in progress on this site.'),
+            'busy'    => true,
+        );
+    }
+
     // Give long upgrades room to breathe.
     @set_time_limit(0);
     if (function_exists('wp_raise_memory_limit')) {
@@ -363,6 +390,8 @@ function wpupdater_apply_updates($targets, $only_plugins = array(), $only_themes
         @unlink($maintenance);
     }
 
+    // Release the overlap lock so the next requested update can run.
+    WP_Upgrader::release_lock('wpupdater_update');
     return $results;
 }
 

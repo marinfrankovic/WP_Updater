@@ -195,7 +195,9 @@ def seed_settings_if_empty() -> None:
         # Security (WPScan vulnerability scanning) — off until a token is added.
         "wpscan_enabled": "0",
         "wpscan_api_token": "",
-        "vuln_cache_ttl_hours": "24",
+        # 7-day cache: WPScan free tier is ~25 lookups/day, so a long TTL keeps
+        # multi-site scans within budget (vuln data changes slowly).
+        "vuln_cache_ttl_hours": "168",
         # Post-update site health check.
         "health_check_enabled": "1",
         # Weekly digest report.
