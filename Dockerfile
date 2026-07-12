@@ -16,7 +16,7 @@ RUN cd frontend && npm run build
 # ---------------------------------------------------------------------------
 # Stage 2 — Python runtime that serves the SPA + JSON API
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
