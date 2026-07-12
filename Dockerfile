@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — build the React SPA into app/webui
 # ---------------------------------------------------------------------------
-FROM node:22-slim AS webui
+FROM node:26-slim AS webui
 WORKDIR /build
 # Install deps first for better layer caching.
 COPY frontend/package.json frontend/package-lock.json* ./frontend/
