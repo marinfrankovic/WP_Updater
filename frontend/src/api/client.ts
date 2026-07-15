@@ -68,6 +68,9 @@ export interface AppUpdateInfo extends AppInfo {
   releaseName: string | null;
   releaseNotes: string | null;
   releaseUrl: string | null;
+  latestConnectorVersion: string | null;
+  connectorDownloadUrl: string | null;
+  connectorError: string | null;
   error: string | null;
 }
 

@@ -77,7 +77,9 @@ docker compose up -d
 
 ### Application updates
 
-Open **Settings → Application updates** to see the installed dashboard version. Update checks are manual unless you opt in to checking whenever Settings opens; that preference stays in the current browser. The dashboard reads stable GitHub Release metadata but never downloads an image, accesses Docker, or executes commands.
+Open **Settings → Application updates** to see the installed dashboard version. Update checks are manual unless you opt in. When enabled, the browser checks once as the dashboard opens and every 24 hours while it remains open; the preference stays in the current browser.
+
+The dashboard compares both its own version and each monitored site's reported MU connector version with the latest stable GitHub Release. A compact banner appears throughout the dashboard when either update is available. Connector notices identify affected sites and link to the release asset. Checks never download an image, change WordPress files, access Docker, or execute commands.
 
 For a Compose deployment using `mfrankovic/wp-updater`, run:
 
@@ -93,7 +95,7 @@ git pull
 docker compose up -d --build wp-updater
 ```
 
-The Settings card displays both command sets with copy buttons when a newer release exists.
+The Settings card displays both command sets with copy buttons when a newer dashboard release exists. Connector updates remain manual: download the release asset and replace the MU plugin on the sites named in the notice.
 
 ---
 

@@ -5,6 +5,7 @@ import { Toaster } from './components/Toaster';
 import { ConfirmModal } from './components/ConfirmModal';
 import { SiteDetailsDrawer } from './components/SiteDetailsDrawer';
 import { SkeletonTable } from './components/Skeleton';
+import { UpdateBanner } from './components/UpdateBanner';
 import { DashboardPage } from './pages/DashboardPage';
 import { SitesPage } from './pages/SitesPage';
 import { UpdatesPage } from './pages/UpdatesPage';
@@ -39,6 +40,7 @@ export function App() {
       <Sidebar />
       <div className="app-main">
         <Topbar />
+        <UpdateBanner />
         <main className="app-content">
           {state.loading ? (
             <div className="page">

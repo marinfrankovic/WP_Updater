@@ -1,4 +1,5 @@
 """Read-only application update checks against stable GitHub Releases."""
+import re
 from typing import Any, Dict, Optional, Tuple
 
 import requests
@@ -6,6 +7,10 @@ import requests
 from . import __version__
 
 LATEST_RELEASE_URL = "https://api.github.com/repos/marinfrankovic/WP_Updater/releases/latest"
+CONNECTOR_ASSET_NAME = "wp-updater-connector.php"
+CONNECTOR_VERSION_PATTERN = re.compile(
+    r"define\(\s*['\"]WPUPDATER_VERSION['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*\)"
+)
 UPDATE_COMMANDS = {
     "publishedImage": [
         "docker compose pull wp-updater",
@@ -44,6 +49,9 @@ def check_for_update() -> Dict[str, Any]:
         "releaseName": None,
         "releaseNotes": None,
         "releaseUrl": None,
+        "latestConnectorVersion": None,
+        "connectorDownloadUrl": None,
+        "connectorError": None,
         "commands": UPDATE_COMMANDS,
         "error": None,
     }
@@ -82,4 +90,37 @@ def check_for_update() -> Dict[str, Any]:
         "releaseNotes": release.get("body"),
         "releaseUrl": release.get("html_url"),
     })
+
+    connector_asset = next(
+        (
+            asset for asset in (release.get("assets") or [])
+            if asset.get("name") == CONNECTOR_ASSET_NAME
+        ),
+        None,
+    )
+    if connector_asset is None or not connector_asset.get("browser_download_url"):
+        result["connectorError"] = "The latest release does not include the connector asset."
+        return result
+
+    result["connectorDownloadUrl"] = connector_asset["browser_download_url"]
+    try:
+        connector_response = requests.get(
+            result["connectorDownloadUrl"],
+            headers={"User-Agent": f"WP-Updater/{__version__}"},
+            timeout=15,
+        )
+        connector_response.raise_for_status()
+    except requests.Timeout:
+        result["connectorError"] = "The connector update check timed out."
+        return result
+    except requests.RequestException as exc:
+        result["connectorError"] = f"Connector update check failed: {exc}"
+        return result
+
+    version_match = CONNECTOR_VERSION_PATTERN.search(connector_response.text)
+    connector_version = _parse_version(version_match.group(1) if version_match else None)
+    if connector_version is None:
+        result["connectorError"] = "The connector asset has an invalid version."
+        return result
+    result["latestConnectorVersion"] = ".".join(str(part) for part in connector_version)
     return result

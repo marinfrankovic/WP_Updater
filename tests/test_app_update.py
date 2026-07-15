@@ -11,7 +11,7 @@ class AppUpdateTests(unittest.TestCase):
     def test_current_info_does_not_contact_github(self, get: Mock) -> None:
         result = app_update.current_info()
 
-        self.assertEqual("1.7.0", result["currentVersion"])
+        self.assertEqual(app_update.__version__, result["currentVersion"])
         self.assertIn("sourceBuild", result["commands"])
         get.assert_not_called()
 
@@ -40,6 +40,52 @@ class AppUpdateTests(unittest.TestCase):
             "docker compose up -d --build wp-updater",
         ], result["commands"]["sourceBuild"])
         self.assertIsNone(result["error"])
+
+    @patch("app.app_update.requests.get")
+    def test_connector_version_is_read_from_release_asset(self, get: Mock) -> None:
+        release_response = Mock(status_code=200)
+        release_response.json.return_value = {
+            "tag_name": "v1.7.0",
+            "name": "WP Updater 1.7.0",
+            "body": "Release notes",
+            "html_url": "https://github.com/example/releases/tag/v1.7.0",
+            "assets": [{
+                "name": "wp-updater-connector.php",
+                "browser_download_url": "https://github.com/example/wp-updater-connector.php",
+            }],
+        }
+        connector_response = Mock(status_code=200)
+        connector_response.text = "define('WPUPDATER_VERSION', '2.3.4');"
+        get.side_effect = [release_response, connector_response]
+
+        result = app_update.check_for_update()
+
+        self.assertEqual("2.3.4", result["latestConnectorVersion"])
+        self.assertEqual(
+            "https://github.com/example/wp-updater-connector.php",
+            result["connectorDownloadUrl"],
+        )
+        self.assertIsNone(result["connectorError"])
+
+    @patch("app.app_update.requests.get")
+    def test_missing_connector_asset_does_not_hide_core_update(self, get: Mock) -> None:
+        response = Mock(status_code=200)
+        response.json.return_value = {
+            "tag_name": "v9.8.7",
+            "name": "WP Updater 9.8.7",
+            "body": "Release notes",
+            "html_url": "https://github.com/example/releases/tag/v9.8.7",
+            "assets": [],
+        }
+        get.return_value = response
+
+        result = app_update.check_for_update()
+
+        self.assertTrue(result["updateAvailable"])
+        self.assertEqual(
+            "The latest release does not include the connector asset.",
+            result["connectorError"],
+        )
 
     @patch("app.app_update.requests.get")
     def test_repository_without_releases_returns_safe_message(self, get: Mock) -> None:

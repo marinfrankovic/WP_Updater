@@ -4,7 +4,6 @@ import { useApp } from '../state/AppContext';
 import {
   apiClient,
   type AppInfo,
-  type AppUpdateInfo,
   type DigestSettings,
   type EmailSettings,
   type ScanSchedule,
@@ -18,8 +17,7 @@ import {
   type ScanFrequency,
   type ScheduleForm,
 } from '../lib/cron';
-
-const AUTO_UPDATE_CHECK_KEY = 'wpupdater-auto-update-check';
+import { isVersionOlder } from '../lib/version';
 
 function pad(n: number): string {
   return n.toString().padStart(2, '0');
@@ -42,7 +40,17 @@ const FREQUENCY_OPTIONS: { value: ScanFrequency; label: string }[] = [
 ];
 
 export function SettingsPage() {
-  const { state, setTheme, pushToast, refresh } = useApp();
+  const {
+    appUpdate,
+    checkForUpdates,
+    state,
+    setTheme,
+    pushToast,
+    refresh,
+    setUpdateCheckEnabled,
+    updateCheckEnabled,
+    updateChecking,
+  } = useApp();
 
   // -------------------------------------------------------------- schedule
   const [schedule, setSchedule] = useState<ScanSchedule | null>(null);
@@ -53,11 +61,10 @@ export function SettingsPage() {
 
   // ------------------------------------------------------------ app update
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
-  const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
-  const [appUpdateChecking, setAppUpdateChecking] = useState(false);
-  const [autoUpdateCheck, setAutoUpdateCheck] = useState(
-    () => window.localStorage.getItem(AUTO_UPDATE_CHECK_KEY) === 'true',
-  );
+  const outdatedConnectorSites = appUpdate?.latestConnectorVersion
+    ? state.sites.filter((site) => isVersionOlder(site.connectorVersion, appUpdate.latestConnectorVersion))
+    : [];
+  const hasAvailableUpdate = Boolean(appUpdate?.updateAvailable || outdatedConnectorSites.length > 0);
 
   // ----------------------------------------------------------------- email
   const [email, setEmail] = useState<EmailSettings | null>(null);
@@ -170,41 +177,6 @@ export function SettingsPage() {
       active = false;
     };
   }, [pushToast]);
-
-  useEffect(() => {
-    if (!autoUpdateCheck) return;
-    let active = true;
-    setAppUpdateChecking(true);
-    apiClient.checkAppUpdate()
-      .then((result) => {
-        if (active) setAppUpdate(result);
-      })
-      .catch((err) => {
-        if (active) pushToast({ title: 'Update check failed', message: String(err), variant: 'error' });
-      })
-      .finally(() => {
-        if (active) setAppUpdateChecking(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [autoUpdateCheck, pushToast]);
-
-  async function checkAppUpdate() {
-    setAppUpdateChecking(true);
-    try {
-      setAppUpdate(await apiClient.checkAppUpdate());
-    } catch (err) {
-      pushToast({ title: 'Update check failed', message: String(err), variant: 'error' });
-    } finally {
-      setAppUpdateChecking(false);
-    }
-  }
-
-  function toggleAutoUpdateCheck(enabled: boolean) {
-    window.localStorage.setItem(AUTO_UPDATE_CHECK_KEY, enabled ? 'true' : 'false');
-    setAutoUpdateCheck(enabled);
-  }
 
   async function copyUpdateCommand(command: string) {
     try {
@@ -438,21 +410,23 @@ export function SettingsPage() {
           <label className="schedule-toggle">
             <input
               type="checkbox"
-              checked={autoUpdateCheck}
-              onChange={(event) => toggleAutoUpdateCheck(event.target.checked)}
+              checked={updateCheckEnabled}
+              onChange={(event) => setUpdateCheckEnabled(event.target.checked)}
             />
-            <span>Check automatically when Settings opens</span>
+            <span>Check automatically</span>
           </label>
-          <span className="muted update-help">This opt-in preference stays in this browser.</span>
+          <span className="muted update-help">
+            Checks when the dashboard opens and every 24 hours while it remains open. This preference stays in this browser.
+          </span>
 
-          <button className="btn btn--ghost update-check" onClick={checkAppUpdate} disabled={appUpdateChecking}>
-            <RefreshCw size={16} className={appUpdateChecking ? 'spin' : undefined} />
-            {appUpdateChecking ? 'Checking…' : 'Check for updates'}
+          <button className="btn btn--ghost update-check" onClick={() => void checkForUpdates()} disabled={updateChecking}>
+            <RefreshCw size={16} className={updateChecking ? 'spin' : undefined} />
+            {updateChecking ? 'Checking…' : 'Check for updates'}
           </button>
 
           {appUpdate?.error ? <div className="update-status update-status--error">{appUpdate.error}</div> : null}
 
-          {appUpdate && !appUpdate.error && appUpdate.updateAvailable ? (
+          {appUpdate && !appUpdate.error && hasAvailableUpdate ? (
             <div className="update-result">
               <div className="update-result__head">
                 <strong>v{appUpdate.latestVersion} is available</strong>
@@ -464,37 +438,59 @@ export function SettingsPage() {
               </div>
               {appUpdate.releaseNotes ? <pre className="update-notes">{appUpdate.releaseNotes}</pre> : null}
 
-              <div className="update-command-group">
-                <strong>Docker Hub image deployment</strong>
-                <span className="muted">Run from the directory containing your published-image compose file.</span>
-                {appUpdate.commands.publishedImage.map((command) => (
-                  <div className="update-command" key={command}>
-                    <code>{command}</code>
-                    <button className="icon-btn" title="Copy command" onClick={() => copyUpdateCommand(command)}>
-                      <Copy size={15} />
-                    </button>
+              {appUpdate.updateAvailable ? (
+                <>
+                  <div className="update-command-group">
+                    <strong>WP Updater v{appUpdate.latestVersion}</strong>
+                    <span className="muted">Docker Hub image deployment</span>
+                    {appUpdate.commands.publishedImage.map((command) => (
+                      <div className="update-command" key={command}>
+                        <code>{command}</code>
+                        <button className="icon-btn" title="Copy command" onClick={() => copyUpdateCommand(command)}>
+                          <Copy size={15} />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              <div className="update-command-group">
-                <strong>Local source build</strong>
-                <span className="muted">Use this for the HPUX deployment and other compose files with <code>build: .</code>.</span>
-                {appUpdate.commands.sourceBuild.map((command) => (
-                  <div className="update-command" key={command}>
-                    <code>{command}</code>
-                    <button className="icon-btn" title="Copy command" onClick={() => copyUpdateCommand(command)}>
-                      <Copy size={15} />
-                    </button>
+                  <div className="update-command-group">
+                    <strong>Local source build</strong>
+                    {appUpdate.commands.sourceBuild.map((command) => (
+                      <div className="update-command" key={command}>
+                        <code>{command}</code>
+                        <button className="icon-btn" title="Copy command" onClick={() => copyUpdateCommand(command)}>
+                          <Copy size={15} />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </>
+              ) : null}
+
+              {outdatedConnectorSites.length > 0 ? (
+                <div className="update-command-group">
+                  <strong>MU connector v{appUpdate.latestConnectorVersion}</strong>
+                  <span className="muted">
+                    Available for {outdatedConnectorSites.map((site) => site.name).join(', ')}. Replace the MU plugin file manually;
+                    WP Updater never changes site files during an update check.
+                  </span>
+                  {appUpdate.connectorDownloadUrl ? (
+                    <a className="btn btn--ghost update-download" href={appUpdate.connectorDownloadUrl}>
+                      Download connector <ExternalLink size={14} />
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
-          {appUpdate && !appUpdate.error && !appUpdate.updateAvailable ? (
+          {appUpdate?.connectorError ? (
+            <div className="update-status update-status--error">{appUpdate.connectorError}</div>
+          ) : null}
+
+          {appUpdate && !appUpdate.error && !hasAvailableUpdate ? (
             <div className="update-status update-status--current">
-              No newer stable release was found. Latest published: v{appUpdate.latestVersion}.
+              WP Updater and all reported MU connectors are current. Latest release: v{appUpdate.latestVersion}.
             </div>
           ) : null}
         </div>

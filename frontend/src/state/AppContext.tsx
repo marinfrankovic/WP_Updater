@@ -6,9 +6,10 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type ReactNode,
 } from 'react';
-import { apiClient, type ServerState } from '../api/client';
+import { apiClient, type AppUpdateInfo, type ServerState } from '../api/client';
 import type {
   ActivityLogEntry,
   RouteKey,
@@ -65,6 +66,8 @@ type Action =
   | { type: 'CLOSE_CONFIRM' };
 
 const THEME_KEY = 'wpupdater-theme';
+const AUTO_UPDATE_CHECK_KEY = 'wpupdater-auto-update-check';
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 function initialTheme(): ThemeMode {
   if (typeof window === 'undefined') return 'light';
@@ -174,6 +177,11 @@ function reducer(state: State, action: Action): State {
 // ---------------------------------------------------------------------------
 interface AppContextValue {
   state: State;
+  appUpdate: AppUpdateInfo | null;
+  updateCheckEnabled: boolean;
+  updateChecking: boolean;
+  setUpdateCheckEnabled: (enabled: boolean) => void;
+  checkForUpdates: () => Promise<void>;
   setTheme: (t: ThemeMode) => void;
   toggleTheme: () => void;
   setRoute: (r: RouteKey) => void;
@@ -222,7 +230,13 @@ const uid = (prefix: string) => `${prefix}-${Date.now()}-${idCounter++}`;
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateCheckEnabled, setUpdateCheckEnabledState] = useState(
+    () => window.localStorage.getItem(AUTO_UPDATE_CHECK_KEY) === 'true',
+  );
   const stateRef = useRef(state);
+  const updateRequestRef = useRef<Promise<void> | null>(null);
   stateRef.current = state;
 
   // Apply theme to <html> and persist.
@@ -236,6 +250,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'PUSH_TOAST', toast });
     setTimeout(() => dispatch({ type: 'DISMISS_TOAST', id: toast.id }), 4500);
   }, []);
+
+  const checkForUpdates = useCallback(() => {
+    if (updateRequestRef.current) return updateRequestRef.current;
+    setUpdateChecking(true);
+    const request = apiClient.checkAppUpdate()
+      .then(setAppUpdate)
+      .catch((err) => {
+        pushToast({ title: 'Update check failed', message: String(err), variant: 'error' });
+      })
+      .finally(() => {
+        updateRequestRef.current = null;
+        setUpdateChecking(false);
+      });
+    updateRequestRef.current = request;
+    return request;
+  }, [pushToast]);
+
+  const setUpdateCheckEnabled = useCallback((enabled: boolean) => {
+    window.localStorage.setItem(AUTO_UPDATE_CHECK_KEY, enabled ? 'true' : 'false');
+    setUpdateCheckEnabledState(enabled);
+  }, []);
+
+  useEffect(() => {
+    if (!updateCheckEnabled) return undefined;
+    void checkForUpdates();
+    const interval = window.setInterval(() => void checkForUpdates(), UPDATE_CHECK_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [checkForUpdates, updateCheckEnabled]);
 
   const loadState = useCallback(
     async (showLoading = false) => {
@@ -492,6 +534,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppContextValue>(
     () => ({
       state,
+      appUpdate,
+      updateCheckEnabled,
+      updateChecking,
+      setUpdateCheckEnabled,
+      checkForUpdates,
       setTheme: (t) => dispatch({ type: 'SET_THEME', theme: t }),
       toggleTheme: () =>
         dispatch({ type: 'SET_THEME', theme: state.theme === 'dark' ? 'light' : 'dark' }),
@@ -526,6 +573,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     [
       state,
+      appUpdate,
+      updateCheckEnabled,
+      updateChecking,
+      setUpdateCheckEnabled,
+      checkForUpdates,
       pushToast,
       loadState,
       addSite,
