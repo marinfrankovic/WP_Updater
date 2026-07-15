@@ -75,6 +75,26 @@ mkdir -p data && sudo chown -R 10001:10001 data
 docker compose up -d
 ```
 
+### Application updates
+
+Open **Settings → Application updates** to see the installed dashboard version. Update checks are manual unless you opt in to checking whenever Settings opens; that preference stays in the current browser. The dashboard reads stable GitHub Release metadata but never downloads an image, accesses Docker, or executes commands.
+
+For a Compose deployment using `mfrankovic/wp-updater`, run:
+
+```bash
+docker compose pull wp-updater
+docker compose up -d --no-deps wp-updater
+```
+
+For a local source build such as the included `compose.yaml`, run:
+
+```bash
+git pull
+docker compose up -d --build wp-updater
+```
+
+The Settings card displays both command sets with copy buttons when a newer release exists.
+
 ---
 
 ## 1. Install the connector on each WordPress site
@@ -224,6 +244,7 @@ Each site uses its own 64-char API key sent in a request header over HTTPS; keep
   keeping the log entry intact; a successful update for a site also clears its
   outstanding errors automatically.
 - **Dark mode** (persisted), empty states, loading skeletons and toast notifications.
+- **Opt-in application update checks** with installed/latest versions, stable release notes, and copyable commands for published-image or local-source deployments.
 
 The UI is deliberately scoped to **updating WordPress core, plugins and themes
 only** — no security scanning, uptime, backups, analytics, SEO, billing or client
@@ -263,11 +284,24 @@ Domain types in `src/types/index.ts` are the contract between the SPA and the
 Flask API. Backend: Flask + gunicorn, stdlib SQLite, an in-process scheduler
 thread, no external services.
 
+### Tests
+
+Install the pinned development requirements and run backend tests:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest
+```
+
+GitHub Actions runs the Python tests and the production frontend build on pushes to `main` and pull requests.
+
 **JSON API** (consumed by the SPA, basic-auth protected like the GUI):
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET    | `/api/state` | full state: sites, available updates, activity log |
+| GET    | `/api/app-info` | installed dashboard version and update commands; no external request |
+| GET    | `/api/app-update` | installed/latest stable release information and update commands |
 | GET / POST | `/api/schedule` | read / change the scan schedule (cron) + on-off |
 | POST   | `/api/sites` (`name,url,apiKey,group`) | add a site + immediate scan |
 | PATCH  | `/api/sites/<id>` (`name,url,group,apiKey`) | edit site (blank apiKey keeps current) |
@@ -303,6 +337,8 @@ Pushing a `vX.Y.Z` tag triggers the **Publish to Docker Hub** GitHub Action, whi
 builds and pushes a multi-arch image to `mfrankovic/wp-updater` (`:X.Y.Z`,
 `:X.Y`, `:latest`). Attach the matching `wp-updater-connector.php` to the GitHub
 Release so the Help page link resolves to it.
+
+Create a GitHub Release for every stable tag. The in-app checker reads GitHub's latest stable release endpoint, so pushing only a tag is not enough to announce an update.
 
 Requires two repository secrets: `DOCKERHUB_USERNAME` and a `DOCKERHUB_TOKEN`
 access token with Read/Write scope.

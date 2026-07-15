@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, jsonify, request
 
-from . import db, emailer, health, scanner, scheduler, telegram, vuln
+from . import app_update, db, emailer, health, scanner, scheduler, telegram, vuln
 
 api = Blueprint("api", __name__, url_prefix="/api")
 
@@ -186,6 +186,16 @@ def _full_state() -> Dict[str, Any]:
 @api.get("/state")
 def get_state():
     return jsonify(_full_state())
+
+
+@api.get("/app-update")
+def get_app_update():
+    return jsonify(app_update.check_for_update())
+
+
+@api.get("/app-info")
+def get_app_info():
+    return jsonify(app_update.current_info())
 
 
 @api.post("/sites")

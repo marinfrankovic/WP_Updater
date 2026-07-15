@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, Mail, MessageCircle, Moon, Newspaper, RefreshCw, Save, Send, ShieldAlert, Sun } from 'lucide-react';
+import { CalendarClock, Copy, ExternalLink, Mail, MessageCircle, Moon, Newspaper, PackageCheck, RefreshCw, Save, Send, ShieldAlert, Sun } from 'lucide-react';
 import { useApp } from '../state/AppContext';
 import {
   apiClient,
+  type AppInfo,
+  type AppUpdateInfo,
   type DigestSettings,
   type EmailSettings,
   type ScanSchedule,
@@ -16,6 +18,8 @@ import {
   type ScanFrequency,
   type ScheduleForm,
 } from '../lib/cron';
+
+const AUTO_UPDATE_CHECK_KEY = 'wpupdater-auto-update-check';
 
 function pad(n: number): string {
   return n.toString().padStart(2, '0');
@@ -46,6 +50,14 @@ export function SettingsPage() {
   const [form, setForm] = useState<ScheduleForm>(() => cronToForm('0 6 * * *'));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // ------------------------------------------------------------ app update
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
+  const [appUpdateChecking, setAppUpdateChecking] = useState(false);
+  const [autoUpdateCheck, setAutoUpdateCheck] = useState(
+    () => window.localStorage.getItem(AUTO_UPDATE_CHECK_KEY) === 'true',
+  );
 
   // ----------------------------------------------------------------- email
   const [email, setEmail] = useState<EmailSettings | null>(null);
@@ -144,6 +156,64 @@ export function SettingsPage() {
       active = false;
     };
   }, [pushToast]);
+
+  useEffect(() => {
+    let active = true;
+    apiClient.getAppInfo()
+      .then((info) => {
+        if (active) setAppInfo(info);
+      })
+      .catch((err) => {
+        if (active) pushToast({ title: 'Could not load application version', message: String(err), variant: 'error' });
+      });
+    return () => {
+      active = false;
+    };
+  }, [pushToast]);
+
+  useEffect(() => {
+    if (!autoUpdateCheck) return;
+    let active = true;
+    setAppUpdateChecking(true);
+    apiClient.checkAppUpdate()
+      .then((result) => {
+        if (active) setAppUpdate(result);
+      })
+      .catch((err) => {
+        if (active) pushToast({ title: 'Update check failed', message: String(err), variant: 'error' });
+      })
+      .finally(() => {
+        if (active) setAppUpdateChecking(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [autoUpdateCheck, pushToast]);
+
+  async function checkAppUpdate() {
+    setAppUpdateChecking(true);
+    try {
+      setAppUpdate(await apiClient.checkAppUpdate());
+    } catch (err) {
+      pushToast({ title: 'Update check failed', message: String(err), variant: 'error' });
+    } finally {
+      setAppUpdateChecking(false);
+    }
+  }
+
+  function toggleAutoUpdateCheck(enabled: boolean) {
+    window.localStorage.setItem(AUTO_UPDATE_CHECK_KEY, enabled ? 'true' : 'false');
+    setAutoUpdateCheck(enabled);
+  }
+
+  async function copyUpdateCommand(command: string) {
+    try {
+      await navigator.clipboard.writeText(command);
+      pushToast({ title: 'Command copied', variant: 'success' });
+    } catch {
+      pushToast({ title: 'Could not copy command', variant: 'error' });
+    }
+  }
 
   async function saveSchedule() {
     const cron = formToCron(form).trim();
@@ -352,6 +422,81 @@ export function SettingsPage() {
           <button className={`theme-option${state.theme === 'dark' ? ' is-active' : ''}`} onClick={() => setTheme('dark')}>
             <Moon size={18} /> Dark
           </button>
+        </div>
+      </section>
+
+      <section className="card settings-card">
+        <h2 className="settings-card__title">
+          <PackageCheck size={18} /> Application updates
+        </h2>
+        <p className="muted">
+          Installed version: <strong>v{appInfo?.currentVersion ?? '—'}</strong>. WP Updater only checks release metadata;
+          it never downloads an image or runs these commands.
+        </p>
+
+        <div className="schedule-form">
+          <label className="schedule-toggle">
+            <input
+              type="checkbox"
+              checked={autoUpdateCheck}
+              onChange={(event) => toggleAutoUpdateCheck(event.target.checked)}
+            />
+            <span>Check automatically when Settings opens</span>
+          </label>
+          <span className="muted update-help">This opt-in preference stays in this browser.</span>
+
+          <button className="btn btn--ghost update-check" onClick={checkAppUpdate} disabled={appUpdateChecking}>
+            <RefreshCw size={16} className={appUpdateChecking ? 'spin' : undefined} />
+            {appUpdateChecking ? 'Checking…' : 'Check for updates'}
+          </button>
+
+          {appUpdate?.error ? <div className="update-status update-status--error">{appUpdate.error}</div> : null}
+
+          {appUpdate && !appUpdate.error && appUpdate.updateAvailable ? (
+            <div className="update-result">
+              <div className="update-result__head">
+                <strong>v{appUpdate.latestVersion} is available</strong>
+                {appUpdate.releaseUrl ? (
+                  <a href={appUpdate.releaseUrl} target="_blank" rel="noreferrer">
+                    Release details <ExternalLink size={14} />
+                  </a>
+                ) : null}
+              </div>
+              {appUpdate.releaseNotes ? <pre className="update-notes">{appUpdate.releaseNotes}</pre> : null}
+
+              <div className="update-command-group">
+                <strong>Docker Hub image deployment</strong>
+                <span className="muted">Run from the directory containing your published-image compose file.</span>
+                {appUpdate.commands.publishedImage.map((command) => (
+                  <div className="update-command" key={command}>
+                    <code>{command}</code>
+                    <button className="icon-btn" title="Copy command" onClick={() => copyUpdateCommand(command)}>
+                      <Copy size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="update-command-group">
+                <strong>Local source build</strong>
+                <span className="muted">Use this for the HPUX deployment and other compose files with <code>build: .</code>.</span>
+                {appUpdate.commands.sourceBuild.map((command) => (
+                  <div className="update-command" key={command}>
+                    <code>{command}</code>
+                    <button className="icon-btn" title="Copy command" onClick={() => copyUpdateCommand(command)}>
+                      <Copy size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {appUpdate && !appUpdate.error && !appUpdate.updateAvailable ? (
+            <div className="update-status update-status--current">
+              No newer stable release was found. Latest published: v{appUpdate.latestVersion}.
+            </div>
+          ) : null}
         </div>
       </section>
 

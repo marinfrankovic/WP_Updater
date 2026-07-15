@@ -456,6 +456,27 @@ code { font-family: var(--mono); font-size: 12px; }
   cursor: pointer; color: var(--text); font-size: 13.5px; font-weight: 540;
 }
 .theme-option.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.update-help { margin: -8px 0 0 !important; font-size: 12px; }
+.update-check { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; }
+.update-status { padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 8px; font-size: 13px; }
+.update-status--current { color: var(--success); background: var(--success-soft); }
+.update-status--error { color: var(--danger); background: var(--danger-soft); }
+.update-result { display: flex; flex-direction: column; gap: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.update-result__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.update-result__head a { display: inline-flex; align-items: center; gap: 5px; color: var(--accent); font-size: 12.5px; }
+.update-notes {
+  max-height: 160px; overflow: auto; margin: 0; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg-sunken); color: var(--text-muted); white-space: pre-wrap;
+  overflow-wrap: anywhere; font-family: inherit; font-size: 12.5px; line-height: 1.5;
+}
+.update-command-group { display: flex; flex-direction: column; gap: 7px; }
+.update-command-group > .muted { margin: -4px 0 0 !important; font-size: 12px; }
+.update-command {
+  display: grid; grid-template-columns: minmax(0, 1fr) 32px; align-items: center; gap: 8px;
+  padding: 7px 8px 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-sunken);
+}
+.update-command code { overflow-wrap: anywhere; font-size: 12px; }
+.update-command .icon-btn { width: 30px; height: 30px; }
 
 /* --------------------------------------------------------- scan schedule */
 .settings-card__title { display: inline-flex; align-items: center; gap: 8px; }

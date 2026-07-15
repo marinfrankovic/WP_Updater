@@ -52,6 +52,25 @@ export interface DigestSettings {
   channels: string;
 }
 
+export interface UpdateCommands {
+  publishedImage: string[];
+  sourceBuild: string[];
+}
+
+export interface AppInfo {
+  currentVersion: string;
+  commands: UpdateCommands;
+}
+
+export interface AppUpdateInfo extends AppInfo {
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  releaseName: string | null;
+  releaseNotes: string | null;
+  releaseUrl: string | null;
+  error: string | null;
+}
+
 export interface VulnFinding {
   type: string;
   slug: string;
@@ -90,6 +109,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const apiClient = {
   getState: () => request<ServerState>('/state'),
+
+  getAppInfo: () => request<AppInfo>('/app-info'),
+
+  checkAppUpdate: () => request<AppUpdateInfo>('/app-update'),
 
   addSite: (input: { name: string; url: string; apiKey: string; group: string }) =>
     request<{ ok: boolean; state: ServerState }>('/sites', {
