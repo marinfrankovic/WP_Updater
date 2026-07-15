@@ -13,3 +13,7 @@
 ### Security
 
 - Kept application updates informational and manual. The dashboard cannot access Docker, download images, or execute update commands.
+
+### Fixed
+
+- Forced LF line endings for shell scripts so source archives deploy correctly from Windows workstations.
